@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -133,6 +134,26 @@ EXTRA ufw Status: active
 	}
 	if m["clamav-daemon"].Version == "" {
 		t.Error("clamav 版本应解析")
+	}
+}
+
+// TestParseSecurityRkhunterScheduled rkhunter 为 cron 定时扫描型，
+// 采集应标记 scheduled 并携带上次检查时间。
+func TestParseSecurityRkhunterScheduled(t *testing.T) {
+	text := `ACTIVE rkhunter|scheduled
+EXTRA rkhunter cron:配置存在
+EXTRA rkhunter 上次检查:2天前
+`
+	items := ParseSecurity(text)
+	if len(items) != 1 {
+		t.Fatalf("应解析 1 项, got %d", len(items))
+	}
+	it := items[0]
+	if it.Name != "rkhunter" || it.Active != "scheduled" || !it.Installed {
+		t.Fatalf("rkhunter 应为 scheduled 且已安装: %+v", it)
+	}
+	if !strings.Contains(it.Version, "2天前") {
+		t.Fatalf("应携带上次检查时间: %q", it.Version)
 	}
 }
 

@@ -152,6 +152,70 @@ func TestHealthReportPersist(t *testing.T) {
 	}
 }
 
+// TestHealthRkhunterScheduled rkhunter 按 cron 定时扫描判定，不再按服务运行状态误报。
+func TestHealthRkhunterScheduled(t *testing.T) {
+	db, cfg := newTestEnv(t)
+	m, _, _ := db.UpsertMachineFromDiscovery("ssh_rkh", 6005)
+
+	// 场景1：定时扫描新鲜 → pass
+	snap := healthySnapshot()
+	snap["security"] = []map[string]any{
+		{"name": "rkhunter", "installed": true, "active": "scheduled", "version": "上次检查:2天前"},
+	}
+	seedSnapshot(t, db, m.ID, snap)
+	rep, err := RunHealth(db, cfg, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range rep.Items {
+		if it.Title == "rkhunter 正常" && it.Status == "pass" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("新鲜定时扫描应 pass: %+v", rep.Items)
+	}
+
+	// 场景2：检查过期 → fail
+	snap["security"] = []map[string]any{
+		{"name": "rkhunter", "installed": true, "active": "scheduled", "version": "上次检查:30天前"},
+	}
+	seedSnapshot(t, db, m.ID, snap)
+	rep2, err := RunHealth(db, cfg, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, it := range rep2.Items {
+		if it.Title == "rkhunter 检查过期" && it.Status == "fail" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("过期检查应 fail: %+v", rep2.Items)
+	}
+
+	// 场景3：无检查日志 → warn（不误报 fail）
+	snap["security"] = []map[string]any{
+		{"name": "rkhunter", "installed": true, "active": "scheduled", "version": "无检查日志"},
+	}
+	seedSnapshot(t, db, m.ID, snap)
+	rep3, err := RunHealth(db, cfg, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, it := range rep3.Items {
+		if it.Title == "rkhunter 无检查记录" && it.Status == "warn" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("无检查日志应 warn: %+v", rep3.Items)
+	}
+}
+
 func TestClamDbAge(t *testing.T) {
 	// 病毒库日期是今天 → 0 天
 	today := time.Now()

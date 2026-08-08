@@ -305,7 +305,7 @@ func (c *Collector) tryGPU(conn *sshx.Conn) *GPUInfo {
 
 func (c *Collector) trySecurity(conn *sshx.Conn) []*SecurityItem {
 	script := `
-for svc in clamav-daemon clamav-freshclam crowdsec fail2ban rkhunter ufw; do
+for svc in clamav-daemon clamav-freshclam crowdsec fail2ban ufw; do
   if systemctl list-unit-files --type=service "$svc.service" 2>/dev/null | grep -q "$svc"; then
     st=$(systemctl is-active "$svc" 2>/dev/null); echo "ACTIVE $svc|$st"
   elif [ -x /usr/sbin/$svc ] || [ -x /usr/bin/$svc ] || command -v $svc >/dev/null 2>&1; then
@@ -314,11 +314,26 @@ for svc in clamav-daemon clamav-freshclam crowdsec fail2ban rkhunter ufw; do
     echo "MISSING $svc"
   fi
 done
+# rkhunter 是 cron 定时扫描型工具（非守护进程），按检查新鲜度判定
+if [ -x /usr/bin/rkhunter ] || [ -x /usr/sbin/rkhunter ] || command -v rkhunter >/dev/null 2>&1; then
+  echo "ACTIVE rkhunter|scheduled"
+  if [ -f /etc/cron.daily/rkhunter ] || [ -f /etc/cron.weekly/rkhunter ] || [ -f /etc/cron.d/rkhunter ]; then
+    echo "EXTRA rkhunter cron:配置存在"
+  fi
+  last=$(stat -c %Y /var/log/rkhunter.log 2>/dev/null || echo 0)
+  if [ "$last" != "0" ] && [ -n "$last" ]; then
+    days=$(( ( $(date +%s) - last ) / 86400 ))
+    echo "EXTRA rkhunter 上次检查:${days}天前"
+  else
+    echo "EXTRA rkhunter 无检查日志"
+  fi
+else
+  echo "MISSING rkhunter"
+fi
 cs=$(clamscan --version 2>/dev/null | head -1); [ -n "$cs" ] && echo "VER clamav-daemon $cs"
 f2b=$(fail2ban-client status 2>/dev/null | grep -oP 'banned IP count:\s*\K\d+' | awk '{s+=$1} END {print s+0}'); [ -n "$f2b" ] && echo "COUNT fail2ban $f2b"
 csc=$(cscli decisions list 2>/dev/null | tail -n +3 | wc -l); [ -n "$csc" ] && echo "COUNT crowdsec $csc"
 ufw=$(ufw status 2>/dev/null | head -1); [ -n "$ufw" ] && echo "EXTRA ufw $ufw"
-rkh=$(grep -iE 'warnings?|rootkit' /var/log/rkhunter.log 2>/dev/null | tail -1); [ -n "$rkh" ] && echo "EXTRA rkhunter $(echo $rkh | cut -c1-120)"
 `
 	out, _, _ := conn.Run(script, SSHTimeout)
 	return ParseSecurity(out)

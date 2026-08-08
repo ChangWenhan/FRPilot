@@ -165,6 +165,19 @@ func RunHealth(db *store.DB, cfg *config.Manager, m *store.Machine) (*HealthRepo
 			add("security", "warn", s.Name+" 未安装", "该机器未安装此安全软件（不视为错误）", 3)
 			continue
 		}
+		if s.Name == "rkhunter" {
+			// rkhunter 是 cron 定时扫描型工具（非守护进程），按上次检查新鲜度判定
+			days, ok := rkhunterAge(s.Version)
+			switch {
+			case !ok:
+				add("security", "warn", "rkhunter 无检查记录", "未找到 /var/log/rkhunter.log 的检查时间", 3)
+			case days <= 8: // cron.daily 每日 + cron.weekly 每周，8 天阈值合理
+				add("security", "pass", "rkhunter 正常", fmt.Sprintf("定时扫描正常，上次检查 %d 天前", days), 0)
+			default:
+				add("security", "fail", "rkhunter 检查过期", fmt.Sprintf("上次检查 %d 天前（建议每天/每周定时扫描）", days), 10)
+			}
+			continue
+		}
 		if s.Active != "active" {
 			add("security", "fail", s.Name+" 服务未运行", "服务状态: "+s.Active, 10)
 			continue
@@ -209,6 +222,26 @@ func RunHealth(db *store.DB, cfg *config.Manager, m *store.Machine) (*HealthRepo
 		rep.Overall = "fail"
 	}
 	return rep, nil
+}
+
+// rkhunterAge 从采集的 EXTRA 文本解析"上次检查:N天前"，返回天数与是否可解析。
+// 输入形如 "cron:配置存在 上次检查:3天前"（EXTRA 全文拼接）。
+func rkhunterAge(extra string) (int, bool) {
+	if extra == "" {
+		return -1, false
+	}
+	idx := strings.Index(extra, "上次检查:")
+	if idx < 0 {
+		return -1, false
+	}
+	rest := extra[idx+len("上次检查:"):]
+	dayStr := strings.TrimSuffix(rest, "天前")
+	dayStr = strings.TrimSpace(strings.SplitN(dayStr, " ", 2)[0])
+	days, err := strconv.Atoi(dayStr)
+	if err != nil {
+		return -1, false
+	}
+	return days, true
 }
 
 // clamDbAge 从 ClamAV 版本串解析病毒库日期天数。
