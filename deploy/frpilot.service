@@ -1,0 +1,31 @@
+[Unit]
+Description=frpilot monitoring platform
+Documentation=https://github.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=frpmon
+Group=frpmon
+# 数据目录 /var/lib/frpilot，配置目录 /etc/frpilot（热修改会写配置）
+ExecStart=/opt/frpilot/frpilot server --data-dir /var/lib/frpilot --config /etc/frpilot/config.json --listen 0.0.0.0:8443
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+# 安全加固：限制系统访问（不读取 HOME、私有临时目录、只读系统分区）
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+# 仅允许写入数据目录与配置目录（其余系统文件只读）
+ReadWritePaths=/var/lib/frpilot /etc/frpilot
+
+[Install]
+WantedBy=multi-user.target
