@@ -9,6 +9,7 @@
     <div class="tabs">
       <button type="button" class="tab" :class="{ on: tab === 'cleanup' }" @click="tab = 'cleanup'">一键清理</button>
       <button type="button" class="tab" :class="{ on: tab === 'health' }" @click="tab = 'health'">一键体检</button>
+      <button type="button" class="tab" :class="{ on: tab === 'scan' }" @click="tab = 'scan'">病毒扫描</button>
       <button type="button" class="tab" :class="{ on: tab === 'tasks' }" @click="tab = 'tasks'">执行记录</button>
     </div>
 
@@ -141,14 +142,53 @@
       </div>
     </div>
 
+    <!-- 病毒扫描 -->
+    <div v-if="tab === 'scan'">
+      <div class="card">
+        <div class="card-head">
+          <h3>选择机器</h3>
+          <span class="grow" />
+          <span class="dim small">需要 root 权限的扫描自动走已配置的 sudo 密码</span>
+        </div>
+        <div class="card-body">
+          <div class="choice-list">
+            <label v-for="m in machines" :key="m.id" class="choice-item" :class="{ on: scanMachines.includes(m.id) }">
+              <input type="checkbox" :value="m.id" v-model="scanMachines" :disabled="!m.hasCredentials" />
+              <span class="truncate">{{ m.name }}</span>
+              <span v-if="!m.hasCredentials" class="meta">未配置凭据</span>
+            </label>
+            <p v-if="!machines.length" class="empty">暂无机器</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>扫描模式</h3></div>
+        <div class="card-body">
+          <div class="choice-list">
+            <label v-for="opt in scanModes" :key="opt.value" class="choice-item" :class="{ on: scanMode === opt.value }">
+              <input type="radio" name="scanmode" :value="opt.value" v-model="scanMode" />
+              <span><b>{{ opt.label }}</b><span class="desc"><br />{{ opt.desc }}</span></span>
+            </label>
+          </div>
+          <div class="action-bar" style="margin-top: 16px">
+            <span class="hint">扫描耗时较长（快速约 10-30 分钟，全盘可能数小时），任务在后台执行，可随时到「执行记录」查看进度</span>
+            <button class="btn" @click="runScan" :disabled="!scanMachines.length">开始扫描</button>
+          </div>
+        </div>
+      </div>
+      <p v-if="scanMsg" :class="scanMsgOk ? 'msg msg--ok' : 'msg msg--err'">{{ scanMsg }}</p>
+    </div>
+
     <!-- 执行记录 -->
     <div v-if="tab === 'tasks'">
       <div v-for="t in tasks" :key="t.id" class="card">
         <div class="card-head">
           <h3>任务 #{{ t.id }}</h3>
+          <span class="badge badge--accent">{{ typeText(t.type) }}</span>
           <span class="badge" :class="statusBadge(t.status)">{{ t.status }}</span>
           <span class="grow" />
-          <span class="dim small">{{ t.createdAt }} · {{ t.operator }} · {{ t.type }}</span>
+          <span class="dim small">{{ t.createdAt }} · {{ t.operator }}</span>
         </div>
         <div class="table-wrap">
           <table class="table">
@@ -188,7 +228,17 @@ const history = ref([])
 const tasks = ref([])
 const msg = ref('')
 const msgOk = ref(true)
+const scanMachines = ref([])
+const scanMode = ref('quick')
+const scanMsg = ref('')
+const scanMsgOk = ref(true)
 let timer = null
+
+const scanModes = [
+  { value: 'quick', label: 'ClamAV 快速扫描', desc: '扫描常用目录（/etc /home /tmp /opt /usr/local /root /var/www），适合日常巡检' },
+  { value: 'full', label: 'ClamAV 全盘扫描', desc: '扫描整个根目录 /，最彻底但耗时很长，可能数小时' },
+  { value: 'rootkit', label: 'Rootkit 检查', desc: 'rkhunter + chkrootkit，检查后门、rootkit 与隐藏痕迹' },
+]
 
 const riskText = { low: '低危', mid: '中危', high: '高危' }
 const overallText = { pass: '健康', warn: '需关注', fail: '异常' }
@@ -239,6 +289,19 @@ async function runCleanup() {
   } catch (e) { msg.value = e.message; msgOk.value = false }
 }
 
+async function runScan() {
+  scanMsg.value = ''
+  const mode = scanModes.find(o => o.value === scanMode.value)?.label || scanMode.value
+  if (!confirm(`确认对 ${scanMachines.value.length} 台机器执行「${mode}」？扫描耗时较长，请在执行记录中查看进度。`)) return
+  try {
+    await post('/api/actions/scan', { machineIds: scanMachines.value, mode: scanMode.value })
+    scanMsg.value = '扫描任务已创建，请在「执行记录」查看进度与结果'
+    scanMsgOk.value = true
+    tab.value = 'tasks'
+    loadTasks()
+  } catch (e) { scanMsg.value = e.message; scanMsgOk.value = false }
+}
+
 async function runHealth() {
   report.value = null
   diagnosis.value = null
@@ -262,6 +325,9 @@ async function runDiagnose() {
 
 function statusBadge(s) {
   return { pass: 'badge--ok', ok: 'badge--ok', running: 'badge--accent', warn: 'badge--warn', failed: 'badge--danger', fail: 'badge--danger', skipped: '' }[s] || ''
+}
+function typeText(t) {
+  return { cleanup: '一键清理', scan: '病毒扫描' }[t] || t
 }
 function overallBadge(o) {
   return { pass: 'badge--ok', warn: 'badge--warn', fail: 'badge--danger' }[o] || ''

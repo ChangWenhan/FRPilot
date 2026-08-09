@@ -54,6 +54,29 @@ func (s *Server) handleCleanupStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"task": task})
 }
 
+type scanReq struct {
+	MachineIDs []int64 `json:"machineIds"`
+	Mode       string  `json:"mode"`
+}
+
+func (s *Server) handleScanStart(w http.ResponseWriter, r *http.Request) {
+	u := userOf(r)
+	var req scanReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if len(req.MachineIDs) == 0 {
+		errJSON(w, http.StatusBadRequest, errors.New("请选择至少一台机器"))
+		return
+	}
+	task, err := s.tasks.StartScan(req.MachineIDs, req.Mode, u.ID, u.Username)
+	if err != nil {
+		errJSON(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"taskId": task.ID})
+}
+
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 	limit := 10
 	if v := r.URL.Query().Get("limit"); v != "" {

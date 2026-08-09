@@ -129,22 +129,7 @@ func (tm *TaskManager) StartCleanup(machineIDs []int64, itemIDs []string, opID i
 	}
 
 	tm.mu.Lock()
-	task := &Task{
-		ID: tm.nextID, Type: "cleanup", Status: "running",
-		CreatedAt: time.Now(), OperatorID: opID, Operator: opName,
-	}
-	tm.nextID++
-	tm.tasks[task.ID] = task
-	// 内存上限：最多保留最近 50 个任务，防止无界增长
-	if len(tm.tasks) > 50 {
-		var oldest int64
-		for id := range tm.tasks {
-			if oldest == 0 || id < oldest {
-				oldest = id
-			}
-		}
-		delete(tm.tasks, oldest)
-	}
+	task := tm.newTaskLocked("cleanup", opID, opName)
 	tm.mu.Unlock()
 
 	names := make([]string, 0, len(items))
@@ -256,6 +241,33 @@ func (tm *TaskManager) effectiveItems() []CleanupItem {
 		})
 	}
 	return items
+}
+
+// newTask 创建并登记一个后台任务（需持有 tm.mu 或通过 newTaskLocked 调用）。
+func (tm *TaskManager) newTask(taskType string, opID int64, opName string) *Task {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.newTaskLocked(taskType, opID, opName)
+}
+
+func (tm *TaskManager) newTaskLocked(taskType string, opID int64, opName string) *Task {
+	task := &Task{
+		ID: tm.nextID, Type: taskType, Status: "running",
+		CreatedAt: time.Now(), OperatorID: opID, Operator: opName,
+	}
+	tm.nextID++
+	tm.tasks[task.ID] = task
+	// 内存上限：最多保留最近 50 个任务，防止无界增长
+	if len(tm.tasks) > 50 {
+		var oldest int64
+		for id := range tm.tasks {
+			if oldest == 0 || id < oldest {
+				oldest = id
+			}
+		}
+		delete(tm.tasks, oldest)
+	}
+	return task
 }
 
 // ListItems 返回全部可用清理项。

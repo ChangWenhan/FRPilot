@@ -84,6 +84,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /api/actions/cleanup-items", s.requireAuth(s.handleCleanupItems))
 	mux.HandleFunc("POST /api/actions/cleanup/preview", s.requireAdmin(s.handleCleanupPreview))
 	mux.HandleFunc("POST /api/actions/cleanup", s.requireAdmin(s.handleCleanupStart))
+	mux.HandleFunc("POST /api/actions/scan", s.requireAdmin(s.handleScanStart))
 	mux.HandleFunc("GET /api/actions/tasks", s.requireAuth(s.handleTasks))
 	mux.HandleFunc("POST /api/actions/health/{id}", s.requireAuth(s.handleHealthCheck))
 	mux.HandleFunc("GET /api/actions/health/reports", s.requireAuth(s.handleHealthReports))

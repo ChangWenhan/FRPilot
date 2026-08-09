@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -60,6 +61,8 @@ func Run(args []string) int {
 		err = cmdTraffic(c, rest, jsonOut)
 	case "cleanup":
 		err = cmdCleanup(c, rest, jsonOut)
+	case "scan":
+		err = cmdScan(c, rest, jsonOut)
 	case "health":
 		err = cmdHealth(c, rest, jsonOut)
 	case "tasks":
@@ -650,6 +653,56 @@ func cmdHealth(c *Client, rest []string, jsonOut bool) error {
 		mark := map[string]string{"pass": "✅", "warn": "⚠", "fail": "❌"}[fmt.Sprint(it["status"])]
 		fmt.Printf("%s [%-8s] %-28s %s\n", mark, it["category"], it["title"], it["detail"])
 	}
+	return nil
+}
+
+// cmdScan 病毒扫描：quick（ClamAV 常用目录）/ full（全盘）/ rootkit（rkhunter/chkrootkit）。
+func cmdScan(c *Client, rest []string, jsonOut bool) error {
+	if len(rest) < 1 {
+		return fmt.Errorf("用法: frpm actions scan <id|name>... --mode quick|full|rootkit")
+	}
+	mode := "quick"
+	var targets []string
+	for _, a := range rest {
+		if a == "--mode" {
+			continue
+		}
+		if strings.HasPrefix(a, "--") {
+			continue
+		}
+		targets = append(targets, a)
+	}
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == "--mode" && i+1 < len(rest) {
+			mode = rest[i+1]
+		}
+	}
+	if len(targets) == 0 {
+		return fmt.Errorf("请指定至少一台机器（id 或名称）")
+	}
+	var ids []int64
+	for _, t := range targets {
+		id, err := resolveID(c, t)
+		if err != nil {
+			return err
+		}
+		n, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			return fmt.Errorf("无效的机器 id: %s", id)
+		}
+		ids = append(ids, n)
+	}
+	var resp struct {
+		TaskID int64 `json:"taskId"`
+	}
+	if err := c.do("POST", "/api/actions/scan", map[string]any{"machineIds": ids, "mode": mode}, &resp); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(resp)
+		return nil
+	}
+	fmt.Printf("已创建扫描任务 #%d（模式: %s），可用 frpm actions tasks 查看结果\n", resp.TaskID, mode)
 	return nil
 }
 
