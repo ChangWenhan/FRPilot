@@ -30,7 +30,7 @@ func DefaultCleanupItems() []CleanupItem {
 			Desc:        "sync 并清空 page cache（不影响文件内容）",
 			Command:     "sync; echo 3 > /proc/sys/vm/drop_caches; sync; free -m | head -2",
 			PreviewCmd:  "free -m | head -2",
-			Timeout:     30,
+			Timeout:     300, // sync 刷盘在大内存/繁忙机器上可能超过 30s，超时会以 SIGHUP(129) 杀死命令
 		},
 		{
 			ID: "apt_cache", Name: "清理 APT 缓存", Risk: "low", RequiresRoot: true,
