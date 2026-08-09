@@ -11,15 +11,18 @@
 - **Automatic discovery** — enumerates all frpc machines (with their tunnel ports) via the frps dashboard API; no manual registration needed
 - **Token baseline protection** — auto-reads the `auth.token` from the frps config file as a read-only baseline for the deployment, with drift detection across the fleet (prevents accidental token changes from dropping every frpc client)
 - **Machine lifecycle management** — auto-discovered → pending → fill in SSH credentials (AES-encrypted at rest) → enable monitoring; machines without credentials are listed but never probed
+- **Per-machine sudo password** — configure a sudo password per machine; collection and actions automatically elevate via `sudo -S` when the SSH user is not root, so root-only commands are no longer skipped
 - **Fault-tolerant collection** — CPU (delta-based) / memory / disk / GPU (nvidia-smi) / load / NIC rates every 30s, plus slow modules (security, cron, ports) every 5min; a failing module never affects the others; missing security software shows a hint instead of an error
 - **Security posture** — ClamAV (incl. signature freshness) / CrowdSec (decision count) / fail2ban (banned count) / rkhunter / UFW checked per machine
 - **Scheduled tasks** — user crontabs, `/etc/crontab`, `/etc/cron.d/*`, cron.hourly/daily/weekly/monthly scripts and systemd timers in one view
 - **Traffic & bandwidth direction** — cumulative traffic, live rates and share percentages per frpc; highlights which machine is consuming the bandwidth and flags rate spikes as anomalies
-- **One-click cleanup** — 5 built-in safe command sets (page cache / APT cache / journal vacuum / user caches / temp files) with risk levels, dry-run preview, custom command extension and human confirmation before execution
+- **One-click cleanup** — 5 built-in safe command sets (page cache / APT cache / journal vacuum / user caches / temp files) with risk levels, dry-run preview, custom command extension and human confirmation before execution; root-required items auto-elevate when a sudo password is configured
+- **Virus scan** — runs the security tools already installed on each machine: ClamAV quick (common dirs) / full (/) scans plus rkhunter/chkrootkit rootkit checks; asynchronous background tasks with real-time per-directory progress
 - **One-click health check** — threshold-based assessment over the latest snapshot (CPU/memory/disk/GPU temp & VRAM/security/tunnel reachability), scored report (fail −10, warn −3; ≥90 pass, ≥70 warn, else fail) with history stored
 - **AI diagnosis** (OpenAI-compatible API) — explains every warn/fail item and suggests remediation steps in plain text; **diagnosis only, never executes** — the system prompt forbids commands and server-side heuristics flag any command-like content as "for reference only"
-- **User system** — mandatory login; the first registered user becomes admin; configurable registration (open / approval / closed); two roles (admin / user); bcrypt hashing, brute-force lockout and a full audit trail
-- **Responsive web UI** — desktop and mobile friendly; installable as a home-screen app
+- **User system** — mandatory login; the first registered user becomes admin; configurable registration (open / approval / closed); two roles (admin / user); bcrypt hashing, account+IP brute-force lockout and a full audit trail
+- **Live task progress** — cleanup/scan tasks show an animated progress bar and the current phase (e.g. "scanning /home (2/7)") in the task records view
+- **Responsive web UI** — shadcn-inspired design system (unified control heights, strict alignment, ellipsis truncation, dropdown action menus); desktop and mobile friendly; installable as a home-screen app
 - **CLI** — `frpm` shares the same API, permissions and audit logging as the web UI
 
 ## Architecture
@@ -32,7 +35,7 @@ FRPilot (single binary, runs on the frps server)
  ├─ Embedded Web UI (Vue3 + ECharts)
  ├─ frps dashboard API client ──► machine discovery / traffic stats
  ├─ SSH collector (x/crypto/ssh) ──► frps host + each frpc via the frp tunnel
- ├─ Action executor (cleanup / health check)
+ ├─ Action executor (cleanup / health check / virus scan — async tasks with live progress)
  ├─ AI diagnosis client (OpenAI-compatible chat/completions)
  └─ SQLite (WAL mode, 30-day retention cleanup)
 ```
@@ -70,7 +73,7 @@ Then visit `http://<frps-IP>:8443`. **The first account to register becomes the 
 1. **Settings** → enter the frps SSH connection info (host / port / user / password)
 2. Click **"Auto-detect frps config"** → dashboard URL, credentials and the token baseline are read from the server automatically
 3. **Machines** → click "Rescan frps" → all frpc machines appear automatically
-4. Fill in SSH credentials for each machine (or repeat the same ones) → click **"Enable monitoring"**
+4. Fill in SSH credentials for each machine (or repeat the same ones) → for non-root SSH users also set a **sudo password** (root-only collection/cleanup/scan commands auto-elevate) → click **"Enable monitoring"**
 
 System metrics start within 30 seconds; security software, cron and port data are collected within 5 minutes.
 
@@ -81,9 +84,9 @@ System metrics start within 30 seconds; security software, cron and port data ar
 | Page | Purpose |
 |------|---------|
 | Overview | machine counts, frps status, token baseline, last seen |
-| Machines | machine list, SSH credentials, monitoring toggle, 24h trend charts, disk / security / cron / ports detail |
+| Machines | machine list, SSH credentials + sudo password (⋮ menu), monitoring toggle, 24h trend charts, disk / security / cron / ports detail |
 | Traffic | bandwidth direction chart, live rates, 24h history, anomaly flags |
-| Actions | one-click cleanup (preview → confirm → execute), health check (report + history), AI diagnosis, task records |
+| Actions | one-click cleanup (preview → confirm → execute), health check (report + history), virus scan (ClamAV/rootkit, live progress), AI diagnosis, task records with progress bars |
 | Settings | frps connection, token baseline, registration mode, health thresholds, custom cleanup commands, AI provider |
 
 ### CLI (frpm)
@@ -92,6 +95,7 @@ System metrics start within 30 seconds; security software, cron and port data ar
 frpm login --user <name>            # first login; token saved to ~/.config/frpmon/
 frpm status                         # overview: machines / frps / token baseline
 frpm machines list                  # machines and their state
+frpm machines set-credentials <id|name> --user <user> --pass <pass> [--sudo-pass <sudo>]
 frpm machines enable <id|name>      # enable monitoring (disable to stop)
 frpm show <id|name>                 # machine snapshot: CPU/memory/disk/GPU
 frpm security <id|name>             # security software status
@@ -100,8 +104,9 @@ frpm ports <id|name>                # open ports
 frpm traffic                        # traffic stats and bandwidth direction
 frpm health <id|name>               # one-click health check
 frpm cleanup <id|name> [--items a,b] # cleanup (preview by default, --execute to run)
+frpm scan <id|name>... [--mode quick|full|rootkit]  # virus scan (default quick)
 frpm diagnose <id|name>             # AI diagnosis
-frpm tasks                          # cleanup task results
+frpm tasks                          # task results with live progress (% + current phase)
 frpm settings detect-frps           # auto-detect frps config
 frpm settings verify-token          # verify token baseline consistency
 frpm audit                          # audit log (admin)
@@ -118,7 +123,7 @@ Config file: `/etc/frpilot/config.json` (generated at install; editable from the
 |-----|-------------|---------|
 | `listenAddr` | listen address | `0.0.0.0:8443` |
 | `registration` | `open` / `approval` / `closed` | `open` |
-| `frps.token` | **read-only token baseline** — auto-detected or set manually; drift triggers a warning | auto-detected |
+| `frps.token` | **read-only token baseline** — auto-detected or set manually; drift triggers a warning; ciphertext lives in SQLite, never in config.json | auto-detected |
 | `health.*` | health thresholds (CPU/memory/disk/GPU temp & VRAM/clamav DB age) | see below |
 | `cleanupCustom` | custom cleanup commands (name/description/command/risk) | empty |
 | `ai.*` | AI provider (URL/model/timeout); API key stored encrypted | disabled |
@@ -137,10 +142,12 @@ Built-in cleanup items: `page_cache` (memory caches, low), `apt_cache` (APT arch
 
 ## Security Model
 
-- Mandatory login; bcrypt-hashed passwords; 5 failed attempts lock the account for 10 minutes (per username)
-- Session tokens support both Cookie and `Authorization: Bearer` (compatible with browsers restricting cookies on HTTP sites)
-- Machine SSH credentials encrypted with AES-GCM; the key file is separated from the database
-- All sensitive operations (login/register/cleanup/health/settings/diagnosis) are written to the audit log with the operator identity
+- Mandatory login; bcrypt-hashed passwords; failed-login counters persisted in the database — 5 failures per account or 15 per source IP lock for 10 minutes (15-minute window), surviving restarts
+- Browser sessions use an **HttpOnly session cookie** (XSS-resistant); the bearer token is no longer stored in localStorage. The CLI opts in via the `X-FRPilot-Client: cli` header to receive a bearer token
+- Sensitive configuration (frps dashboard/SSH passwords, token baseline, AI API key) is AES-GCM encrypted in SQLite; **config.json never holds plaintext credentials** (legacy values are migrated automatically on upgrade)
+- Machine SSH credentials and sudo passwords are AES-GCM encrypted at rest; the key file is separate from the database; APIs return masks only, never plaintext
+- Changing a password revokes all of that user's old sessions; security response headers enabled (nosniff / X-Frame-Options / Referrer-Policy, etc.)
+- All sensitive operations (login/register/cleanup/health/scan/settings/diagnosis) are written to the audit log with the operator identity
 - systemd hardening: dedicated no-login user, `ProtectSystem=strict`, `NoNewPrivileges`, private tmp, etc.
 - Read-only token baseline: changing the token in frps/frpc configs triggers a drift warning
 
@@ -227,6 +234,12 @@ Hard-refresh (`Cmd/Ctrl+Shift+R`) to clear stale cache — frontend assets are c
 
 **Q: A machine shows "no credentials"?**
 Fill in the SSH user/password on the Machines page and click "Enable monitoring". Credentials are encrypted locally and the software never modifies anything on the monitored machines.
+
+**Q: Root-only operations (cleanup/scan) fail under a non-root SSH user?**
+Configure a **sudo password** for that machine in "Machines → edit credentials" (or use root as the SSH user). Once set, collection, cleanup and virus-scan commands that need root automatically elevate via `sudo -S` instead of being skipped.
+
+**Q: How long does a virus scan take?**
+Quick scan (7 common directories) typically 10-30 minutes; full scan can take hours depending on the machine; rootkit check takes about 2-10 minutes. Tasks run in the background — the task records view refreshes every 3 seconds and shows a live progress bar with the current directory being scanned. If a tool isn't installed, the task reports "ClamAV not detected" instead of failing.
 
 **Q: How do I use it on my phone?**
 Visit the same URL — the UI adapts automatically; use the browser's "Add to Home Screen" for an app-like experience.
