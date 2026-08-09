@@ -144,3 +144,98 @@ func (db *DB) DeleteUserSessions(userID int64) error {
 	_, err := db.sql.Exec(`DELETE FROM sessions WHERE user_id=?`, userID)
 	return err
 }
+
+// LoginLimit 是持久化的登录失败计数。把它放在数据库而不是进程内 map，
+// 可以让重启/更新后仍然保留锁定状态，也避免多实例时每个实例各自放行爆破。
+type LoginLimit struct {
+	Failures    int
+	LockedUntil *time.Time
+	LastFailed  *time.Time
+}
+
+func (db *DB) GetLoginLimit(key string) (*LoginLimit, error) {
+	limit := &LoginLimit{}
+	var lockedUntil, lastFailed sql.NullTime
+	err := db.sql.QueryRow(
+		`SELECT failures, locked_until, last_failed_at FROM login_limits WHERE key=?`, key,
+	).Scan(&limit.Failures, &lockedUntil, &lastFailed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if lockedUntil.Valid {
+		limit.LockedUntil = &lockedUntil.Time
+	}
+	if lastFailed.Valid {
+		limit.LastFailed = &lastFailed.Time
+	}
+	return limit, nil
+}
+
+// RegisterLoginFailure 原子地记录一次失败，并返回当前是否已进入锁定。
+func (db *DB) RegisterLoginFailure(key string, maxFails int, lockFor, window time.Duration) (bool, error) {
+	if maxFails < 1 {
+		maxFails = 1
+	}
+	now := time.Now()
+	tx, err := db.sql.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var failures int
+	var lockedUntil, lastFailed sql.NullTime
+	err = tx.QueryRow(
+		`SELECT failures, locked_until, last_failed_at FROM login_limits WHERE key=?`, key,
+	).Scan(&failures, &lockedUntil, &lastFailed)
+	if errors.Is(err, sql.ErrNoRows) {
+		failures = 0
+	} else if err != nil {
+		return false, err
+	}
+	if lockedUntil.Valid && lockedUntil.Time.After(now) {
+		return true, nil
+	}
+	// 锁定期结束或观察窗口已过，从零开始计算，避免旧失败次数
+	// 在很久之后突然触发新的锁定。
+	if (lockedUntil.Valid && !lockedUntil.Time.After(now)) ||
+		(lastFailed.Valid && window > 0 && now.Sub(lastFailed.Time) > window) {
+		failures = 0
+	}
+	failures++
+	var newLocked any
+	locked := failures >= maxFails
+	if locked {
+		newLocked = now.Add(lockFor)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = tx.Exec(
+			`INSERT INTO login_limits(key, failures, locked_until, last_failed_at) VALUES(?,?,?,?)`,
+			key, failures, newLocked, now)
+	} else {
+		_, err = tx.Exec(
+			`UPDATE login_limits SET failures=?, locked_until=?, last_failed_at=? WHERE key=?`,
+			failures, newLocked, now, key)
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return locked, nil
+}
+
+func (db *DB) ClearLoginLimit(key string) error {
+	_, err := db.sql.Exec(`DELETE FROM login_limits WHERE key=?`, key)
+	return err
+}
+
+func (db *DB) DeleteExpiredLoginLimits() {
+	_, _ = db.sql.Exec(
+		`DELETE FROM login_limits WHERE (locked_until IS NULL OR locked_until < ?) AND (last_failed_at IS NULL OR last_failed_at < ?)`,
+		time.Now(), time.Now().Add(-24*time.Hour))
+}

@@ -26,7 +26,7 @@ func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]vm, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, vm{Machine: m, HasCredentials: m.SSHUser != ""})
+		out = append(out, vm{Machine: m, HasCredentials: m.SSHUser != "" && m.SSHPassEnc != ""})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"machines": out})
 }
@@ -132,7 +132,7 @@ func (s *Server) handleCollectNow(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusNotFound, err)
 		return
 	}
-	if m.SSHUser == "" {
+	if m.SSHUser == "" || m.SSHPassEnc == "" {
 		errJSON(w, http.StatusBadRequest, errors.New("该机器未配置 SSH 凭据"))
 		return
 	}
@@ -190,19 +190,28 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			"hasKey":      s.aiKeyMask() != "",
 		},
 		"frps": map[string]any{
-			"dashboardUrl":  c.Frps.DashboardURL,
-			"dashboardUser": c.Frps.DashboardUser,
-			"dashboardPass": c.Frps.DashboardPass,
-			"sshHost":       c.Frps.SSHHost,
-			"sshPort":       c.Frps.SSHPort,
-			"sshUser":       c.Frps.SSHUser,
-			"sshPass":       c.Frps.SSHPass,
-			"configPath":    c.Frps.ConfigPath,
-			"tokenBaseline": c.Frps.Token,
-			"tokenSet":      tokenSet,
-			"tokenReadonly": tokenSet,
+			"dashboardUrl":      c.Frps.DashboardURL,
+			"dashboardUser":     c.Frps.DashboardUser,
+			"dashboardPassMask": maskSecret(c.Frps.DashboardPass),
+			"dashboardPassSet":  c.Frps.DashboardPass != "",
+			"sshHost":           c.Frps.SSHHost,
+			"sshPort":           c.Frps.SSHPort,
+			"sshUser":           c.Frps.SSHUser,
+			"sshPassMask":       maskSecret(c.Frps.SSHPass),
+			"sshPassSet":        c.Frps.SSHPass != "",
+			"configPath":        c.Frps.ConfigPath,
+			"tokenMask":         maskSecret(c.Frps.Token),
+			"tokenSet":          tokenSet,
+			"tokenReadonly":     tokenSet,
 		},
 	})
+}
+
+func maskSecret(value string) string {
+	if value == "" {
+		return ""
+	}
+	return "••••••••"
 }
 
 // aiKeyMask 返回 API Key 掩码（加密存储，仅显示尾 4 位）。
@@ -222,26 +231,26 @@ func (s *Server) aiKeyMask() string {
 }
 
 type saveSettingsReq struct {
-	Registration string `json:"registration"`
+	Registration *string `json:"registration"`
 	Frps         struct {
-		DashboardURL  string `json:"dashboardUrl"`
-		DashboardUser string `json:"dashboardUser"`
-		DashboardPass string `json:"dashboardPass"`
-		SSHHost       string `json:"sshHost"`
-		SSHPort       int    `json:"sshPort"`
-		SSHUser       string `json:"sshUser"`
-		SSHPass       string `json:"sshPass"`
-		ConfigPath    string `json:"configPath"`
-		Token         string `json:"token"`
+		DashboardURL  *string `json:"dashboardUrl"`
+		DashboardUser *string `json:"dashboardUser"`
+		DashboardPass *string `json:"dashboardPass"`
+		SSHHost       *string `json:"sshHost"`
+		SSHPort       *int    `json:"sshPort"`
+		SSHUser       *string `json:"sshUser"`
+		SSHPass       *string `json:"sshPass"`
+		ConfigPath    *string `json:"configPath"`
+		Token         *string `json:"token"`
 	} `json:"frps"`
 	Health        *config.HealthThresholds   `json:"health"`
 	CleanupCustom []config.CustomCleanupItem `json:"cleanupCustom"`
 	AI            *struct {
-		Enabled     bool   `json:"enabled"`
-		ProviderURL string `json:"providerUrl"`
-		Model       string `json:"model"`
-		TimeoutSec  int    `json:"timeoutSec"`
-		APIKey      string `json:"apiKey"` // 传入新值则更新（掩码值忽略）
+		Enabled     *bool   `json:"enabled"`
+		ProviderURL *string `json:"providerUrl"`
+		Model       *string `json:"model"`
+		TimeoutSec  *int    `json:"timeoutSec"`
+		APIKey      *string `json:"apiKey"` // 传入新值则更新（掩码值忽略）
 	} `json:"ai"`
 }
 
@@ -250,23 +259,44 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Registration != "open" && req.Registration != "approval" && req.Registration != "closed" {
+	curr := s.cfg.Get()
+	registration := curr.Registration
+	if req.Registration != nil {
+		registration = *req.Registration
+	}
+	if registration != "open" && registration != "approval" && registration != "closed" {
 		errJSON(w, http.StatusBadRequest, errors.New("非法注册模式"))
 		return
 	}
 	err := s.cfg.Update(func(c *config.AppConfig) {
-		c.Registration = req.Registration
-		c.Frps.DashboardURL = req.Frps.DashboardURL
-		c.Frps.DashboardUser = req.Frps.DashboardUser
-		c.Frps.DashboardPass = req.Frps.DashboardPass
-		c.Frps.SSHHost = req.Frps.SSHHost
-		c.Frps.SSHPort = req.Frps.SSHPort
-		c.Frps.SSHUser = req.Frps.SSHUser
-		c.Frps.SSHPass = req.Frps.SSHPass
-		c.Frps.ConfigPath = req.Frps.ConfigPath
-		// token 基线：仅当显式提供新值时覆盖（防误改：UI 只读时不携带此字段）
-		if req.Frps.Token != "" {
-			c.Frps.Token = req.Frps.Token
+		c.Registration = registration
+		if req.Frps.DashboardURL != nil {
+			c.Frps.DashboardURL = strings.TrimSpace(*req.Frps.DashboardURL)
+		}
+		if req.Frps.DashboardUser != nil {
+			c.Frps.DashboardUser = strings.TrimSpace(*req.Frps.DashboardUser)
+		}
+		if req.Frps.DashboardPass != nil && *req.Frps.DashboardPass != "" && !strings.HasPrefix(*req.Frps.DashboardPass, "••") && !strings.HasPrefix(*req.Frps.DashboardPass, "****") {
+			c.Frps.DashboardPass = *req.Frps.DashboardPass
+		}
+		if req.Frps.SSHHost != nil {
+			c.Frps.SSHHost = strings.TrimSpace(*req.Frps.SSHHost)
+		}
+		if req.Frps.SSHPort != nil {
+			c.Frps.SSHPort = *req.Frps.SSHPort
+		}
+		if req.Frps.SSHUser != nil {
+			c.Frps.SSHUser = strings.TrimSpace(*req.Frps.SSHUser)
+		}
+		if req.Frps.SSHPass != nil && *req.Frps.SSHPass != "" && !strings.HasPrefix(*req.Frps.SSHPass, "••") && !strings.HasPrefix(*req.Frps.SSHPass, "****") {
+			c.Frps.SSHPass = *req.Frps.SSHPass
+		}
+		if req.Frps.ConfigPath != nil {
+			c.Frps.ConfigPath = strings.TrimSpace(*req.Frps.ConfigPath)
+		}
+		// token 基线只接受显式新值；GET 返回的掩码永远不会被当成新 token。
+		if req.Frps.Token != nil && *req.Frps.Token != "" && !strings.HasPrefix(*req.Frps.Token, "••") && !strings.HasPrefix(*req.Frps.Token, "****") {
+			c.Frps.Token = *req.Frps.Token
 		}
 		if req.Health != nil {
 			c.Health = *req.Health
@@ -275,11 +305,17 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			c.CleanupCustom = req.CleanupCustom
 		}
 		if req.AI != nil {
-			c.AI.Enabled = req.AI.Enabled
-			c.AI.ProviderURL = req.AI.ProviderURL
-			c.AI.Model = req.AI.Model
-			if req.AI.TimeoutSec > 0 {
-				c.AI.TimeoutSec = req.AI.TimeoutSec
+			if req.AI.Enabled != nil {
+				c.AI.Enabled = *req.AI.Enabled
+			}
+			if req.AI.ProviderURL != nil {
+				c.AI.ProviderURL = strings.TrimSpace(*req.AI.ProviderURL)
+			}
+			if req.AI.Model != nil {
+				c.AI.Model = strings.TrimSpace(*req.AI.Model)
+			}
+			if req.AI.TimeoutSec != nil && *req.AI.TimeoutSec > 0 {
+				c.AI.TimeoutSec = *req.AI.TimeoutSec
 			}
 		}
 	})
@@ -288,8 +324,8 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// API Key 单独加密存储（掩码值不覆盖）
-	if req.AI != nil && req.AI.APIKey != "" && !strings.HasPrefix(req.AI.APIKey, "****") {
-		enc, err := s.db.EncryptSecret(req.AI.APIKey)
+	if req.AI != nil && req.AI.APIKey != nil && *req.AI.APIKey != "" && !strings.HasPrefix(*req.AI.APIKey, "****") && !strings.HasPrefix(*req.AI.APIKey, "••") {
+		enc, err := s.db.EncryptSecret(*req.AI.APIKey)
 		if err != nil {
 			errJSON(w, http.StatusInternalServerError, err)
 			return
@@ -316,8 +352,8 @@ func (s *Server) handleDetectFrps(w http.ResponseWriter, r *http.Request) {
 		"bindPort":      info["bindPort"],
 		"dashboardPort": info["dashboardPort"],
 		"dashboardUser": info["dashboardUser"],
-		"token":         info["token"],
 		"tokenSet":      info["token"] != "",
+		"tokenMask":     maskSecret(info["token"]),
 	})
 }
 
@@ -352,8 +388,7 @@ func (s *Server) handleVerifyToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message":    "token 校验通过",
-		"token":      token,
-		"baseline":   s.cfg.Get().Frps.Token,
+		"tokenMask":  maskSecret(token),
 		"consistent": true,
 	})
 }
@@ -445,9 +480,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		cnt[m.Status]++
 	}
 	info := map[string]any{
-		"machines":     cnt,
-		"frpsConfig":   s.cfg.Get().Frps.DashboardURL != "",
-		"tokenBaseline": s.cfg.Get().Frps.Token,
+		"machines":   cnt,
+		"frpsConfig": s.cfg.Get().Frps.DashboardURL != "",
+		"tokenSet":   s.cfg.Get().Frps.Token != "",
+		"tokenMask":  maskSecret(s.cfg.Get().Frps.Token),
 	}
 	if client, err := registry.NewFrpsClient(s.cfg); err == nil {
 		if si, err := client.Test(); err == nil {

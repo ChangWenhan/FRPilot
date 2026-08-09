@@ -17,17 +17,74 @@ type FrpsConfig struct {
 	// Dashboard API 访问信息（软件部署在 frps 本机时走 127.0.0.1）
 	DashboardURL  string `json:"dashboardUrl"`
 	DashboardUser string `json:"dashboardUser"`
-	DashboardPass string `json:"dashboardPass"`
+	// 敏感值由 config.SyncEncryptedSecrets 写入 SQLite 的加密 settings；
+	// 这些字段只在进程内保留，永远不通过 config.json 序列化。
+	DashboardPass string `json:"-"`
 	// frps 本机 SSH 信息（用于读 frps.ini 校验 token、部署自检）
 	SSHHost string `json:"sshHost"`
 	SSHPort int    `json:"sshPort"`
 	SSHUser string `json:"sshUser"`
-	SSHPass string `json:"sshPass"`
+	SSHPass string `json:"-"`
 	// Token 是该部署的 auth token 基线：由「自动检测」从 frps 配置文件读取，
 	// 或部署时手动设置；设置后 UI 只读展示，漂移检测以此为准。
-	Token string `json:"token"`
+	Token string `json:"-"`
 	// 探测到的 frps 配置路径
 	ConfigPath string `json:"configPath"`
+}
+
+// frpsConfigJSON 同时承担两件事：
+//  1. 兼容读取旧版本 config.json 中的明文密码/token，供启动时迁移；
+//  2. 通过 FrpsConfig.MarshalJSON 确保新写入的 config.json 不再包含敏感值。
+//
+// 不要把敏感字段直接加回 FrpsConfig 的 json tag，否则一次热保存就会把
+// 运行时凭据重新写回明文配置文件。
+type frpsConfigJSON struct {
+	DashboardURL  string `json:"dashboardUrl"`
+	DashboardUser string `json:"dashboardUser"`
+	DashboardPass string `json:"dashboardPass"`
+	SSHHost       string `json:"sshHost"`
+	SSHPort       int    `json:"sshPort"`
+	SSHUser       string `json:"sshUser"`
+	SSHPass       string `json:"sshPass"`
+	Token         string `json:"token"`
+	ConfigPath    string `json:"configPath"`
+}
+
+func (f FrpsConfig) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		DashboardURL  string `json:"dashboardUrl"`
+		DashboardUser string `json:"dashboardUser"`
+		SSHHost       string `json:"sshHost"`
+		SSHPort       int    `json:"sshPort"`
+		SSHUser       string `json:"sshUser"`
+		ConfigPath    string `json:"configPath"`
+	}{
+		DashboardURL:  f.DashboardURL,
+		DashboardUser: f.DashboardUser,
+		SSHHost:       f.SSHHost,
+		SSHPort:       f.SSHPort,
+		SSHUser:       f.SSHUser,
+		ConfigPath:    f.ConfigPath,
+	})
+}
+
+func (f *FrpsConfig) UnmarshalJSON(data []byte) error {
+	var v frpsConfigJSON
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	*f = FrpsConfig{
+		DashboardURL:  v.DashboardURL,
+		DashboardUser: v.DashboardUser,
+		DashboardPass: v.DashboardPass,
+		SSHHost:       v.SSHHost,
+		SSHPort:       v.SSHPort,
+		SSHUser:       v.SSHUser,
+		SSHPass:       v.SSHPass,
+		Token:         v.Token,
+		ConfigPath:    v.ConfigPath,
+	}
+	return nil
 }
 
 // TlsConfig HTTPS 支持（自签名证书部署时由 install.sh 生成）。
@@ -71,19 +128,21 @@ type HealthThresholds struct {
 }
 
 type AppConfig struct {
-	ListenAddr      string            `json:"listenAddr"`
-	DataDir         string            `json:"dataDir"`
-	ConfigPath      string            `json:"-"`
-	Frps            FrpsConfig        `json:"frps"`
-	Registration    string            `json:"registration"` // open | approval | closed
-	SessionTTLDays  int               `json:"sessionTTLDays"`
-	LoginMaxFails   int               `json:"loginMaxFails"`
-	LoginLockMinute int               `json:"loginLockMinutes"`
-	Health          HealthThresholds  `json:"health"`
+	ListenAddr      string              `json:"listenAddr"`
+	DataDir         string              `json:"dataDir"`
+	ConfigPath      string              `json:"-"`
+	Frps            FrpsConfig          `json:"frps"`
+	Registration    string              `json:"registration"` // open | approval | closed
+	SessionTTLDays  int                 `json:"sessionTTLDays"`
+	LoginMaxFails   int                 `json:"loginMaxFails"`
+	LoginLockMinute int                 `json:"loginLockMinutes"`
+	LoginIPMaxFails int                 `json:"loginIPMaxFails"`
+	LoginWindowMin  int                 `json:"loginWindowMinutes"`
+	Health          HealthThresholds    `json:"health"`
 	CleanupCustom   []CustomCleanupItem `json:"cleanupCustom"`
-	AI              AiConfig          `json:"ai"`
-	TLS             TlsConfig         `json:"tls"`
-	Version         string            `json:"-"`
+	AI              AiConfig            `json:"ai"`
+	TLS             TlsConfig           `json:"tls"`
+	Version         string              `json:"-"`
 }
 
 func DefaultConfig(dataDir string) *AppConfig {
@@ -95,6 +154,8 @@ func DefaultConfig(dataDir string) *AppConfig {
 		SessionTTLDays:  7,
 		LoginMaxFails:   5,
 		LoginLockMinute: 10,
+		LoginIPMaxFails: 15,
+		LoginWindowMin:  15,
 		Health: HealthThresholds{
 			CPUWarn: 70, CPUFail: 85,
 			MemWarn: 80, MemFail: 90,
@@ -114,7 +175,7 @@ func DefaultConfig(dataDir string) *AppConfig {
 type Manager struct {
 	mu     sync.RWMutex
 	cfg    *AppConfig
-	onSave func() error
+	onSave func(*AppConfig) error
 }
 
 func NewManager(cfg *AppConfig) *Manager {
@@ -146,6 +207,7 @@ func LoadOrCreateAt(dataDir, configPath string) (*Manager, error) {
 		}
 		loaded.DataDir = dataDir
 		loaded.ConfigPath = path
+		applyDefaults(&loaded, cfg)
 		cfg = &loaded
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -168,25 +230,126 @@ func (m *Manager) Get() *AppConfig {
 // Update 原子替换配置并立即持久化（热修改：进程内生效，无需重启）。
 func (m *Manager) Update(fn func(*AppConfig)) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	fn(m.cfg)
-	if err := m.persist(); err != nil {
+	candidate := cloneConfig(m.cfg)
+	fn(candidate)
+	if m.onSave != nil {
+		if err := m.onSave(candidate); err != nil {
+			m.mu.Unlock()
+			return err
+		}
+	}
+	if err := m.persist(candidate); err != nil {
+		m.mu.Unlock()
 		return err
 	}
-	if m.onSave != nil {
-		return m.onSave()
-	}
+	*m.cfg = *candidate
+	m.mu.Unlock()
 	return nil
 }
 
-func (m *Manager) OnSave(fn func() error) { m.mu.Lock(); m.onSave = fn; m.mu.Unlock() }
+// OnSave 在配置通过校验、写入磁盘前调用。回调拿到的是候选配置，适合把
+// 敏感字段同步到外部加密存储；回调失败时不会替换内存中的配置。
+func (m *Manager) OnSave(fn func(*AppConfig) error) { m.mu.Lock(); m.onSave = fn; m.mu.Unlock() }
 
-func (m *Manager) persist() error {
-	b, err := json.MarshalIndent(m.cfg, "", "  ")
+func (m *Manager) persist(cfg *AppConfig) error {
+	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.cfg.ConfigPath, b, 0o600)
+	tmp, err := os.CreateTemp(filepath.Dir(cfg.ConfigPath), ".config.json-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, cfg.ConfigPath)
+}
+
+func cloneConfig(src *AppConfig) *AppConfig {
+	cp := *src
+	cp.CleanupCustom = append([]CustomCleanupItem(nil), src.CleanupCustom...)
+	return &cp
+}
+
+func applyDefaults(cfg, defaults *AppConfig) {
+	if cfg.ListenAddr == "" {
+		cfg.ListenAddr = defaults.ListenAddr
+	}
+	if cfg.Registration == "" {
+		cfg.Registration = defaults.Registration
+	}
+	if cfg.SessionTTLDays <= 0 {
+		cfg.SessionTTLDays = defaults.SessionTTLDays
+	}
+	if cfg.LoginMaxFails <= 0 {
+		cfg.LoginMaxFails = defaults.LoginMaxFails
+	}
+	if cfg.LoginLockMinute <= 0 {
+		cfg.LoginLockMinute = defaults.LoginLockMinute
+	}
+	if cfg.LoginIPMaxFails <= 0 {
+		cfg.LoginIPMaxFails = defaults.LoginIPMaxFails
+	}
+	if cfg.LoginWindowMin <= 0 {
+		cfg.LoginWindowMin = defaults.LoginWindowMin
+	}
+	if cfg.Frps.SSHPort <= 0 {
+		cfg.Frps.SSHPort = defaults.Frps.SSHPort
+	}
+	if cfg.Health.CPUWarn <= 0 {
+		cfg.Health.CPUWarn = defaults.Health.CPUWarn
+	}
+	if cfg.Health.CPUFail <= 0 {
+		cfg.Health.CPUFail = defaults.Health.CPUFail
+	}
+	if cfg.Health.MemWarn <= 0 {
+		cfg.Health.MemWarn = defaults.Health.MemWarn
+	}
+	if cfg.Health.MemFail <= 0 {
+		cfg.Health.MemFail = defaults.Health.MemFail
+	}
+	if cfg.Health.DiskWarn <= 0 {
+		cfg.Health.DiskWarn = defaults.Health.DiskWarn
+	}
+	if cfg.Health.DiskFail <= 0 {
+		cfg.Health.DiskFail = defaults.Health.DiskFail
+	}
+	if cfg.Health.GPUTempWarn <= 0 {
+		cfg.Health.GPUTempWarn = defaults.Health.GPUTempWarn
+	}
+	if cfg.Health.GPUTempFail <= 0 {
+		cfg.Health.GPUTempFail = defaults.Health.GPUTempFail
+	}
+	if cfg.Health.GPUMemWarn <= 0 {
+		cfg.Health.GPUMemWarn = defaults.Health.GPUMemWarn
+	}
+	if cfg.Health.GPUMemFail <= 0 {
+		cfg.Health.GPUMemFail = defaults.Health.GPUMemFail
+	}
+	if cfg.Health.ClamDbMaxDays <= 0 {
+		cfg.Health.ClamDbMaxDays = defaults.Health.ClamDbMaxDays
+	}
+	if cfg.Health.SnapshotMaxAge <= 0 {
+		cfg.Health.SnapshotMaxAge = defaults.Health.SnapshotMaxAge
+	}
+	if cfg.AI.TimeoutSec <= 0 {
+		cfg.AI.TimeoutSec = defaults.AI.TimeoutSec
+	}
 }
 
 // VerifyTokenBaseline 校验给定 token 是否等于该部署的基线（配置中存储的 token）。

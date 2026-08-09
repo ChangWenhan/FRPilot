@@ -3,22 +3,22 @@
     <h1>FRPilot</h1>
     <p class="sub">FRP 全栈监控平台</p>
     <div class="tabs">
-      <button :class="{ on: mode === 'login' }" @click="mode = 'login'">登录</button>
-      <button :class="{ on: mode === 'register' }" @click="mode = 'register'">注册</button>
+      <button type="button" class="control control--tab" :class="{ on: mode === 'login' }" @click="mode = 'login'">登录</button>
+      <button type="button" class="control control--tab" :class="{ on: mode === 'register' }" @click="mode = 'register'">注册</button>
     </div>
     <form @submit.prevent="submit">
-      <input v-model="username" placeholder="用户名" autocomplete="username" />
-      <input v-model="password" type="password" placeholder="密码" autocomplete="current-password" />
-      <input v-if="mode === 'register'" v-model="confirm" type="password" placeholder="确认密码" />
+      <input class="control-input" v-model="username" placeholder="用户名" autocomplete="username" />
+      <input class="control-input" v-model="password" type="password" placeholder="密码" autocomplete="current-password" />
+      <input v-if="mode === 'register'" class="control-input" v-model="confirm" type="password" placeholder="确认密码" autocomplete="new-password" />
       <p v-if="error" class="error">{{ error }}</p>
-      <button type="submit" class="primary">{{ mode === 'login' ? '登录' : '注册' }}</button>
+      <button type="submit" class="control control--wide">{{ mode === 'login' ? '登录' : '注册' }}</button>
     </form>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { post, saveToken } from '../api.js'
+import { post } from '../api.js'
 
 const mode = ref('login')
 const username = ref('')
@@ -45,7 +45,6 @@ async function submit() {
   }
   try {
     const r = await post('/api/auth/login', { username: username.value, password: password.value })
-    if (r.token) saveToken(r.token)
     // 整页刷新：让 App.vue 重新挂载并加载用户信息
     window.location.href = '/'
   } catch (e) {

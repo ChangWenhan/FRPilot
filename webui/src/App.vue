@@ -9,7 +9,7 @@
       <router-link v-if="me.role === 'admin'" to="/settings">设置</router-link>
       <span class="spacer" />
       <span class="user">{{ me.username }} ({{ me.role === 'admin' ? '管理员' : '普通用户' }})</span>
-      <button @click="logout">退出</button>
+      <button class="control control--sm control--ghost" @click="logout">退出</button>
     </nav>
     <main><router-view /></main>
   </div>

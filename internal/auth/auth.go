@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -25,28 +24,21 @@ const (
 )
 
 var (
-	ErrUsernameTaken = errors.New("用户名已被占用")
-	ErrWeakPassword  = errors.New("密码强度不足：至少 8 位且包含字母和数字")
-	ErrInvalidCreds  = errors.New("用户名或密码错误")
-	ErrAccountLocked = errors.New("登录失败次数过多，已临时锁定")
+	ErrUsernameTaken   = errors.New("用户名已被占用")
+	ErrWeakPassword    = errors.New("密码强度不足：至少 8 位且包含字母和数字")
+	ErrInvalidCreds    = errors.New("用户名或密码错误")
+	ErrAccountLocked   = errors.New("登录失败次数过多，已临时锁定")
 	ErrPendingApproval = errors.New("账户待管理员审批")
-	ErrTooManyUsers  = errors.New("注册已关闭，请联系管理员创建账户")
+	ErrTooManyUsers    = errors.New("注册已关闭，请联系管理员创建账户")
+	ErrInvalidUsername = errors.New("用户名不能为空且不得超过 64 位，仅允许字母、数字、点、短横线和下划线")
 )
 
 type Service struct {
 	db *store.DB
-	// 防爆破：key=username，记录失败次数与锁定时间
-	mu    sync.Mutex
-	fails map[string]*failEntry
-}
-
-type failEntry struct {
-	count int
-	until time.Time
 }
 
 func NewService(db *store.DB) *Service {
-	return &Service{db: db, fails: map[string]*failEntry{}}
+	return &Service{db: db}
 }
 
 func (s *Service) DB() *store.DB { return s.db }
@@ -62,6 +54,9 @@ func (s *Service) IsFirstUser() (bool, error) {
 func (s *Service) Register(username, password, mode string) (*store.User, error) {
 	username = strings.TrimSpace(username)
 	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	if err := validateUsername(username); err != nil {
 		return nil, err
 	}
 	first, err := s.IsFirstUser()
@@ -116,23 +111,58 @@ func validatePassword(pw string) error {
 	return nil
 }
 
-// Login 登录：校验 bcrypt + 防爆破（每用户名 5 次失败锁 10 分钟）。
+func validateUsername(username string) error {
+	if len(username) == 0 || len(username) > 64 {
+		return ErrInvalidUsername
+	}
+	for _, r := range username {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '-' || r == '_' {
+			continue
+		}
+		return ErrInvalidUsername
+	}
+	return nil
+}
+
+// Login 登录：校验 bcrypt，并把账户与客户端地址的失败计数持久化到 DB。
+// Login 保留给 CLI/内部调用；HTTP 层应使用 LoginWithClient，传入可信的
+// RemoteAddr，从而避免攻击者通过不断更换用户名绕过账户锁定。
 func (s *Service) Login(username, password string, sessionTTLDays, maxFails, lockMinutes int) (*store.User, string, error) {
+	windowMinutes := lockMinutes * 2
+	if windowMinutes < 15 {
+		windowMinutes = 15
+	}
+	return s.LoginWithClient(username, password, sessionTTLDays, maxFails, maxFails*3, lockMinutes, windowMinutes, "")
+}
+
+// LoginWithClient 同时提供账户级和客户端级限流。clientKey 只应由服务端
+// 从 RemoteAddr 提取，不直接信任可伪造的 X-Forwarded-For。
+func (s *Service) LoginWithClient(username, password string, sessionTTLDays, maxFails, ipMaxFails, lockMinutes, windowMinutes int, clientKey string) (*store.User, string, error) {
 	username = strings.TrimSpace(username)
-	s.mu.Lock()
-	entry := s.fails[username]
-	if entry != nil && time.Now().Before(entry.until) {
-		s.mu.Unlock()
+	accountKey := "account:" + strings.ToLower(username)
+	if limited, err := s.isLoginLimited(accountKey, "ip:"+clientKey); err != nil {
+		return nil, "", err
+	} else if limited {
 		return nil, "", ErrAccountLocked
 	}
-	s.mu.Unlock()
 
 	u, err := s.db.GetUserByName(username)
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-		s.registerFail(username, maxFails, lockMinutes)
+	// 对不存在的用户名也执行一次同成本 bcrypt，降低账号枚举的时序差异，
+	// 同时避免原实现对 nil 用户解引用导致的 panic。
+	hash := dummyPasswordHash
+	if err == nil && u != nil {
+		hash = u.PasswordHash
+	}
+	valid := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	if err != nil || u == nil || !valid {
+		if lockErr := s.registerLoginFailure(accountKey, "ip:"+clientKey, maxFails, ipMaxFails, lockMinutes, windowMinutes); lockErr != nil {
+			return nil, "", lockErr
+		}
 		return nil, "", ErrInvalidCreds
 	}
-	s.clearFail(username)
+	if err := s.clearLoginFailures(accountKey, "ip:"+clientKey); err != nil {
+		return nil, "", err
+	}
 	if u.Status != StatusApproved {
 		return nil, "", ErrPendingApproval
 	}
@@ -152,25 +182,56 @@ func (s *Service) Login(username, password string, sessionTTLDays, maxFails, loc
 	return u, token, nil
 }
 
-func (s *Service) registerFail(username string, maxFails, lockMinutes int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	e := s.fails[username]
-	if e == nil {
-		e = &failEntry{}
-		s.fails[username] = e
+func (s *Service) isLoginLimited(accountKey, ipKey string) (bool, error) {
+	for _, key := range []string{accountKey, ipKey} {
+		if strings.HasSuffix(key, ":") {
+			continue
+		}
+		limit, err := s.db.GetLoginLimit(key)
+		if err != nil {
+			return false, err
+		}
+		if limit != nil && limit.LockedUntil != nil && time.Now().Before(*limit.LockedUntil) {
+			return true, nil
+		}
 	}
-	e.count++
-	if e.count >= maxFails {
-		e.until = time.Now().Add(time.Duration(lockMinutes) * time.Minute)
-		e.count = 0
-	}
+	return false, nil
 }
 
-func (s *Service) clearFail(username string) {
-	s.mu.Lock()
-	delete(s.fails, username)
-	s.mu.Unlock()
+func (s *Service) registerLoginFailure(accountKey, ipKey string, maxFails, ipMaxFails, lockMinutes, windowMinutes int) error {
+	if maxFails <= 0 {
+		maxFails = 5
+	}
+	if ipMaxFails <= 0 {
+		ipMaxFails = maxFails * 3
+	}
+	if lockMinutes <= 0 {
+		lockMinutes = 10
+	}
+	if windowMinutes <= 0 {
+		windowMinutes = 15
+	}
+	if _, err := s.db.RegisterLoginFailure(accountKey, maxFails,
+		time.Duration(lockMinutes)*time.Minute, time.Duration(windowMinutes)*time.Minute); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(ipKey, ":") {
+		if _, err := s.db.RegisterLoginFailure(ipKey, ipMaxFails,
+			time.Duration(lockMinutes)*time.Minute, time.Duration(windowMinutes)*time.Minute); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) clearLoginFailures(accountKey, ipKey string) error {
+	if err := s.db.ClearLoginLimit(accountKey); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(ipKey, ":") {
+		return s.db.ClearLoginLimit(ipKey)
+	}
+	return nil
 }
 
 // Auth 校验会话 token，返回用户。失败返回 nil。
@@ -257,6 +318,16 @@ func newToken() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// 仅用于未知用户名的 bcrypt 比较，避免通过响应时间区分“用户名不存在”。
+// 生成一次即可，成本与用户密码哈希一致。
+var dummyPasswordHash = func() string {
+	h, err := bcrypt.GenerateFromPassword([]byte("frpilot-invalid-login"), bcrypt.DefaultCost)
+	if err != nil {
+		return "$2a$10$7EqJtq98hPqEX7fNZaFWoO8Y8f3Qq4sB3l0oM1n1m4xY3x3Jw7m8K"
+	}
+	return string(h)
+}()
 
 // ConstantTimeEq 常量时间比较（防时序攻击，可用于 token 比对）。
 func ConstantTimeEq(a, b string) bool {

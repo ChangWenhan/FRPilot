@@ -2,9 +2,9 @@
   <div>
     <h2>操作中心</h2>
     <div class="tabs">
-      <button :class="{ on: tab === 'cleanup' }" @click="tab = 'cleanup'">一键清理</button>
-      <button :class="{ on: tab === 'health' }" @click="tab = 'health'">一键体检</button>
-      <button :class="{ on: tab === 'tasks' }" @click="tab = 'tasks'">执行记录</button>
+      <button class="control control--tab" :class="{ on: tab === 'cleanup' }" @click="tab = 'cleanup'">一键清理</button>
+      <button class="control control--tab" :class="{ on: tab === 'health' }" @click="tab = 'health'">一键体检</button>
+      <button class="control control--tab" :class="{ on: tab === 'tasks' }" @click="tab = 'tasks'">执行记录</button>
     </div>
 
     <!-- 一键清理 -->
@@ -19,7 +19,7 @@
         </div>
       </section>
       <section>
-        <h3>选择清理项 <button class="small ghost" @click="loadItems">刷新</button></h3>
+        <h3>选择清理项 <button class="control control--sm control--ghost" @click="loadItems">刷新</button></h3>
         <div class="chips">
           <label v-for="it in items" :key="it.id" class="chip" :class="'risk-' + it.risk">
             <input type="checkbox" :value="it.id" v-model="cleanupItems" />
@@ -30,8 +30,8 @@
         </div>
       </section>
       <div class="actions">
-        <button v-if="cleanupMachines.length === 1" class="ghost" @click="preview">预览（dry-run）</button>
-        <button class="danger" @click="runCleanup" :disabled="!cleanupMachines.length || !cleanupItems.length">执行清理</button>
+        <button v-if="cleanupMachines.length === 1" class="control control--ghost" @click="preview">预览（dry-run）</button>
+        <button class="control control--danger" @click="runCleanup" :disabled="!cleanupMachines.length || !cleanupItems.length">执行清理</button>
         <span class="hint">预览仅支持单选机器；执行前建议先预览</span>
       </div>
       <div v-if="previewResults" class="preview">
@@ -54,7 +54,7 @@
             {{ m.name }} <span v-if="!m.hasCredentials" class="dim">(未配置凭据)</span>
           </label>
         </div>
-        <div class="actions"><button @click="runHealth" :disabled="!healthMachine">开始体检</button></div>
+        <div class="actions"><button class="control" @click="runHealth" :disabled="!healthMachine">开始体检</button></div>
       </section>
 
       <div v-if="report" class="report" :class="report.overall">
@@ -74,7 +74,7 @@
           </tbody>
         </table></div>
         <div class="ai-row">
-          <button class="ghost" @click="runDiagnose" :disabled="diagnosing">🤖 AI 诊断分析</button>
+          <button class="control control--ghost" @click="runDiagnose" :disabled="diagnosing">🤖 AI 诊断分析</button>
           <span v-if="diagnosing" class="dim">分析中（约需 10-30 秒）...</span>
         </div>
         <div v-if="diagnosis" class="diagnosis">

@@ -96,22 +96,37 @@ func (s *Server) routes() {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w, r, s.cfg)
 	s.mux.ServeHTTP(w, r)
 }
 
 // ---- 中间件 ----
 
 func (s *Server) sessionUser(r *http.Request) *store.User {
-	token := ""
-	if c, err := r.Cookie("frpmon_token"); err == nil {
-		token = c.Value
+	return s.auth.Auth(sessionToken(r))
+}
+
+func sessionToken(r *http.Request) string {
+	if c, err := r.Cookie("frpmon_token"); err == nil && c.Value != "" {
+		return c.Value
 	}
-	if token == "" {
-		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-			token = strings.TrimPrefix(h, "Bearer ")
-		}
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 	}
-	return s.auth.Auth(token)
+	return ""
+}
+
+func setSecurityHeaders(w http.ResponseWriter, r *http.Request, cfg *config.Manager) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	if cfg.Get().TLS.Enabled {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+	}
 }
 
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {

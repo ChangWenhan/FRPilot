@@ -24,8 +24,8 @@
       </div>
     </div>
     <div class="token-bar">
-      token 基线 <code>{{ status?.tokenBaseline }}</code>
-      <span class="badge">只读，禁止修改</span>
+      token 基线 <code>{{ status?.tokenSet ? status?.tokenMask : '未设置' }}</code>
+      <span class="badge">已保护，不在页面回显原文</span>
     </div>
     <h3>机器状态</h3>
     <div class="table-wrap"><table>

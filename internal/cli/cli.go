@@ -93,6 +93,7 @@ func (c *Client) Login(user, pass string) (string, error) {
 	var resp struct {
 		Username string `json:"username"`
 		Role     string `json:"role"`
+		Token    string `json:"token"`
 	}
 	req, err := http.NewRequest(http.MethodPost, c.Server+"/api/auth/login", bytes.NewReader([]byte(fmt.Sprintf(
 		`{"username":%q,"password":%q}`, user, pass))))
@@ -100,6 +101,7 @@ func (c *Client) Login(user, pass string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-FRPilot-Client", "cli")
 	httpResp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
@@ -110,6 +112,9 @@ func (c *Client) Login(user, pass string) (string, error) {
 		return "", fmt.Errorf("登录失败: %s", strings.TrimSpace(string(raw)))
 	}
 	_ = json.Unmarshal(raw, &resp)
+	if resp.Token != "" {
+		return resp.Token, nil
+	}
 	for _, ck := range httpResp.Cookies() {
 		if ck.Name == "frpmon_token" {
 			return ck.Value, nil

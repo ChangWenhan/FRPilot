@@ -1,13 +1,13 @@
 <template>
   <div v-if="machine">
-    <div class="head">
-      <button class="ghost" @click="$router.push('/machines')">← 返回</button>
+    <div class="head page-head">
+      <button class="control control--sm control--ghost" @click="$router.push('/machines')">← 返回</button>
       <h2>{{ machine.name }}</h2>
       <span class="badge" :class="machine.status">{{ statusText[machine.status] }}</span>
       <span v-if="data?.tunnelUp === false" class="badge danger">隧道不通</span>
       <span class="spacer" />
       <span v-if="data" class="ts">采集于 {{ fmtTs(data.ts) }}</span>
-      <button class="ghost" @click="collectNow">立即采集</button>
+      <button class="control control--sm control--ghost" @click="collectNow">立即采集</button>
     </div>
 
     <p v-if="machine.status !== 'enabled'" class="notice">

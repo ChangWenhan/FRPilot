@@ -1,16 +1,28 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"frpmon/internal/store"
 )
 
-// TestTokenPersistAndReload 验证 token 由配置持久化（每个部署各自不同），
-// 不再被硬编码常量强制覆盖。
+// TestTokenPersistAndReload 验证 token 会持久化到加密 settings，
+// 但不会再写回 config.json 明文。
 func TestTokenPersistAndReload(t *testing.T) {
 	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 	m, err := LoadOrCreate(dir)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncEncryptedSecrets(m, db); err != nil {
 		t.Fatal(err)
 	}
 	// 初始未设置
@@ -27,13 +39,23 @@ func TestTokenPersistAndReload(t *testing.T) {
 	if got := m.Get().Frps.Token; got != "my-custom-token-789" {
 		t.Fatalf("token 未生效: %q", got)
 	}
-	// 重新加载后仍在（持久化）
+	// 重新加载并从加密 settings 恢复
 	m2, err := LoadOrCreate(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := SyncEncryptedSecrets(m2, db); err != nil {
+		t.Fatal(err)
+	}
 	if got := m2.Get().Frps.Token; got != "my-custom-token-789" {
 		t.Fatalf("token 未持久化: %q", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "my-custom-token-789") || strings.Contains(string(raw), "\"token\"") {
+		t.Fatalf("config.json 不应包含 token 明文: %s", raw)
 	}
 	// 普通设置保存不应清空 token
 	err = m2.Update(func(c *AppConfig) {

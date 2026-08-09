@@ -93,6 +93,11 @@ func runServer(args []string) error {
 		return err
 	}
 	defer db.Close()
+	// 首次启动时兼容读取旧 config.json 中的明文敏感字段，并立即迁移到
+	// SQLite 的 AES-GCM settings；之后热保存不会再把它们写回配置文件。
+	if err := config.SyncEncryptedSecrets(cfg, db); err != nil {
+		return err
+	}
 
 	authSvc := auth.NewService(db)
 	reg := registry.NewService(db, cfg)
@@ -131,6 +136,7 @@ func runServer(args []string) error {
 		defer ticker.Stop()
 		for range ticker.C {
 			db.DeleteExpiredSessions()
+			db.DeleteExpiredLoginLimits()
 		}
 	}()
 	go func() {

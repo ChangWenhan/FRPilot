@@ -284,8 +284,8 @@ func TestSettingsTokenReadonly(t *testing.T) {
 	json.NewDecoder(resp3.Body).Decode(&s3)
 	resp3.Body.Close()
 	frps3 := s3["frps"].(map[string]any)
-	if frps3["tokenBaseline"] != "abc-token-123" {
-		t.Fatalf("token 基线应已设置, got %v", frps3["tokenBaseline"])
+	if frps3["tokenMask"] != "••••••••" {
+		t.Fatalf("token 只能返回掩码, got %v", frps3["tokenMask"])
 	}
 	if frps3["tokenReadonly"] != true {
 		t.Fatal("设置后 token 应标记只读")
@@ -304,7 +304,7 @@ func TestSettingsTokenReadonly(t *testing.T) {
 	var s5 map[string]any
 	json.NewDecoder(resp5.Body).Decode(&s5)
 	resp5.Body.Close()
-	if frps5 := s5["frps"].(map[string]any); frps5["tokenBaseline"] != "abc-token-123" {
+	if frps5 := s5["frps"].(map[string]any); frps5["tokenMask"] != "••••••••" {
 		t.Fatal("普通保存不应清空 token 基线")
 	}
 }

@@ -1,23 +1,21 @@
 const TOKEN_KEY = 'frpmon_token'
 
-export function saveToken(t) {
-  localStorage.setItem(TOKEN_KEY, t)
-}
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY)
+	try { localStorage.removeItem(TOKEN_KEY) } catch {}
 }
-function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || ''
-}
+
+// Legacy versions stored a bearer token in localStorage. Browser requests now
+// rely exclusively on the HttpOnly session cookie; remove the old value on
+// first load so an XSS cannot reuse a stale token from a previous version.
+clearToken()
 
 async function api(method, path, body) {
   const headers = {}
   if (body) headers['Content-Type'] = 'application/json'
-  const token = getToken()
-  if (token) headers['Authorization'] = 'Bearer ' + token
-  const resp = await fetch(path, {
-    method,
-    headers,
+	const resp = await fetch(path, {
+		method,
+		headers,
+		credentials: 'same-origin',
     body: body ? JSON.stringify(body) : undefined,
   })
   const data = await resp.json().catch(() => ({}))

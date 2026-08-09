@@ -63,13 +63,21 @@ func (s *Service) UpdateCredentials(id int64, sshUser, sshPass string) error {
 		return errors.New("SSH 用户不能为空")
 	}
 	if sshPass == "" {
-		return errors.New("SSH 密码不能为空")
+		// UI 不再回显旧密码；编辑用户名时留空表示保留原来的密文。
+		m, err := s.db.GetMachineByID(id)
+		if err != nil {
+			return err
+		}
+		if m.SSHPassEnc == "" {
+			return errors.New("SSH 密码不能为空")
+		}
+		return s.db.SetMachineCredentials(id, strings.TrimSpace(sshUser), m.SSHPassEnc)
 	}
 	enc, err := s.db.EncryptSecret(sshPass)
 	if err != nil {
 		return err
 	}
-	return s.db.SetMachineCredentials(id, sshUser, enc)
+	return s.db.SetMachineCredentials(id, strings.TrimSpace(sshUser), enc)
 }
 
 // SetEnabled 开/关监控。开启要求凭据已配置（store 层校验）。
@@ -103,7 +111,7 @@ func (s *Service) VerifyFrpsTokenBaseline() (string, error) {
 		return "", err
 	}
 	if !ok {
-		return token, fmt.Errorf("token 漂移：frps 配置中 token=%q，基线为 %q（基线为部署时设定，若确实更换了 token 请重新检测）", token, baseline)
+		return "", fmt.Errorf("token 漂移：frps 配置中的 token 与当前基线不一致（基线为部署时设定，若确实更换了 token 请重新检测）")
 	}
 	return token, nil
 }
@@ -158,11 +166,11 @@ func (s *Service) AutoDetectFrpsInfo() (map[string]string, error) {
 		return nil, err
 	}
 	return map[string]string{
-		"configPath":  path,
-		"bindPort":    firstNonEmpty(vals["bind_port"], vals["bindPort"]),
+		"configPath":    path,
+		"bindPort":      firstNonEmpty(vals["bind_port"], vals["bindPort"]),
 		"dashboardPort": dashPort,
 		"dashboardUser": user,
-		"token":       token,
+		"token":         token,
 	}, nil
 }
 

@@ -94,6 +94,11 @@ func (db *DB) migrate() error {
 			token TEXT PRIMARY KEY,
 			user_id INTEGER NOT NULL,
 			expires_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS login_limits(
+			key TEXT PRIMARY KEY,
+			failures INTEGER NOT NULL DEFAULT 0,
+			locked_until DATETIME,
+			last_failed_at DATETIME)`,
 		`CREATE TABLE IF NOT EXISTS machines(
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,

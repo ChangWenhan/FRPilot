@@ -183,7 +183,11 @@ func cmdStatus(c *Client, jsonOut bool) error {
 		fmt.Printf("机器: 总计 %v | 待配置 %v | 已配置 %v | 监控中 %v | 停用 %v\n",
 			m["total"], m["pending"], m["configured"], m["enabled"], m["disabled"])
 	}
-	fmt.Printf("token 基线: %v (只读)\n", st["tokenBaseline"])
+	if st["tokenSet"] == true {
+		fmt.Println("token 基线: 已设置（原文不回显，只读）")
+	} else {
+		fmt.Println("token 基线: 未设置")
+	}
 	if frps, ok := st["frps"].(map[string]any); ok {
 		fmt.Printf("frps: 版本 %v | 在线客户端 %v | 入流量 %s | 出流量 %s\n",
 			frps["version"], frps["clients"], fmtBytes(frps["trafficIn"]), fmtBytes(frps["trafficOut"]))
@@ -736,7 +740,7 @@ func cmdSettings(c *Client, rest []string, jsonOut bool) error {
 		fmt.Printf("frps dashboard: %v (用户 %v)\n", frps["dashboardUrl"], frps["dashboardUser"])
 		fmt.Printf("frps SSH: %v:%v (%v)\n", frps["sshHost"], frps["sshPort"], frps["sshUser"])
 		if frps["tokenSet"] == true {
-			fmt.Printf("token 基线: %v [已设置，只读；漂移检测以此为准]\n", frps["tokenBaseline"])
+			fmt.Println("token 基线: 已设置（原文不回显，只读；漂移检测以此为准）")
 		} else {
 			fmt.Println("token 基线: 未设置（可执行 frpm settings detect-frps 一键自动检测）")
 		}
@@ -763,7 +767,7 @@ func cmdSettings(c *Client, rest []string, jsonOut bool) error {
 			return nil
 		}
 		fmt.Printf("自动检测完成：\n  配置路径: %v\n  bindPort: %v\n  dashboardPort: %v\n  dashboardUser: %v\n  token 基线: %v\n",
-			res["configPath"], res["bindPort"], res["dashboardPort"], res["dashboardUser"], res["token"])
+			res["configPath"], res["bindPort"], res["dashboardPort"], res["dashboardUser"], map[bool]string{true: "已安全保存", false: "未设置"}[res["tokenSet"] == true])
 		return nil
 	case "verify-token":
 		res, err := c.VerifyToken()
@@ -774,7 +778,7 @@ func cmdSettings(c *Client, rest []string, jsonOut bool) error {
 			printJSON(res)
 			return nil
 		}
-		fmt.Printf("token 校验通过: %v == 基线 %v\n", res["token"], res["baseline"])
+		fmt.Println("token 校验通过：当前 frps token 与基线一致（原文不回显）")
 		return nil
 	default:
 		return fmt.Errorf("未知子命令: %s", sub)

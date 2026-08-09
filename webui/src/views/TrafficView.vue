@@ -44,7 +44,7 @@
         </section>
 
         <div class="chart-wrap">
-          <h3>24 小时流量速率趋势 <button class="small ghost" @click="loadHistory">刷新</button></h3>
+          <h3>24 小时流量速率趋势 <button class="control control--sm control--ghost" @click="loadHistory">刷新</button></h3>
           <div ref="trendChart" class="chart tall"></div>
         </div>
       </template>

@@ -1,8 +1,8 @@
 <template>
   <div>
-    <div class="head">
+    <div class="head page-head">
       <h2>机器管理</h2>
-      <button v-if="isAdmin" @click="discover">重新扫描 frps</button>
+      <button v-if="isAdmin" class="control" @click="discover">重新扫描 frps</button>
     </div>
     <p v-if="discoverMsg" class="ok">{{ discoverMsg }}</p>
     <div class="table-wrap"><table>
@@ -17,23 +17,23 @@
           <td><span class="badge" :class="m.status">{{ statusText[m.status] }}</span></td>
           <td>
             <template v-if="editId === m.id">
-              <input v-model="credUser" placeholder="SSH 用户" class="inline" />
-              <input v-model="credPass" type="password" placeholder="SSH 密码" class="inline" />
-              <button class="small ok" @click="saveCreds(m)">保存</button>
-              <button class="small ghost" @click="editId = null">取消</button>
+              <input v-model="credUser" placeholder="SSH 用户" class="control-input control-input--inline inline" />
+              <input v-model="credPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" class="control-input control-input--inline inline" />
+              <button class="control control--sm control--success" @click="saveCreds(m)">保存</button>
+              <button class="control control--sm control--ghost" @click="editId = null">取消</button>
             </template>
             <template v-else>
               <span>{{ m.hasCredentials ? `已配置 (${m.sshUser})` : '未配置' }}</span>
-              <button v-if="isAdmin" class="small ghost" @click="startEdit(m)">编辑</button>
+                <button v-if="isAdmin" class="control control--sm control--ghost" @click="startEdit(m)">编辑</button>
             </template>
           </td>
           <td>
-            <button v-if="isAdmin" :class="['small', m.enabled ? 'danger' : 'ok']"
+            <button v-if="isAdmin" :class="['control', 'control--sm', m.enabled ? 'control--danger' : 'control--success']"
               @click="toggle(m)">
               {{ m.enabled ? '停用监控' : (m.hasCredentials ? '启用监控' : '待配置凭据') }}
             </button>
             <span v-else>{{ m.enabled ? '监控中' : '未启用' }}</span>
-            <a class="small link" :href="`/machines/${m.id}`">详情 →</a>
+            <a class="control control--sm control--ghost small link" :href="`/machines/${m.id}`">详情 →</a>
           </td>
         </tr>
         <tr v-if="!machines.length">

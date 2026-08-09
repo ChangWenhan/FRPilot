@@ -8,6 +8,7 @@ import MachineDetailView from './views/MachineDetailView.vue'
 import TrafficView from './views/TrafficView.vue'
 import ActionsView from './views/ActionsView.vue'
 import SettingsView from './views/SettingsView.vue'
+import './styles.css'
 
 const router = createRouter({
   history: createWebHistory(),
