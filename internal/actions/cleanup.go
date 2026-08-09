@@ -64,13 +64,23 @@ func DefaultCleanupItems() []CleanupItem {
 }
 
 // Task 一次清理执行任务。
+// TaskProgress 任务实时进度（前端轮询展示）。
+type TaskProgress struct {
+	TotalMachines int    `json:"totalMachines"`
+	DoneMachines  int    `json:"doneMachines"`
+	Current       string `json:"current"` // 当前处理的机器
+	Phase         string `json:"phase"`   // 当前阶段，如 "正在扫描 /home（2/7）"
+	Pct           int    `json:"pct"`     // 0-100 整体估算进度
+}
+
 type Task struct {
 	ID         int64         `json:"id"`
-	Type       string        `json:"type"` // cleanup
+	Type       string        `json:"type"` // cleanup | scan
 	Status     string        `json:"status"`
 	CreatedAt  time.Time     `json:"createdAt"`
 	OperatorID int64         `json:"operatorId"`
 	Operator   string        `json:"operator"`
+	Progress   *TaskProgress `json:"progress,omitempty"`
 	Results    []*TaskResult `json:"results"`
 	Err        string        `json:"err,omitempty"`
 }
@@ -130,6 +140,7 @@ func (tm *TaskManager) StartCleanup(machineIDs []int64, itemIDs []string, opID i
 
 	tm.mu.Lock()
 	task := tm.newTaskLocked("cleanup", opID, opName)
+	task.Progress = &TaskProgress{TotalMachines: len(machines), Current: machines[0].Name, Phase: "准备中"}
 	tm.mu.Unlock()
 
 	names := make([]string, 0, len(items))
@@ -141,6 +152,12 @@ func (tm *TaskManager) StartCleanup(machineIDs []int64, itemIDs []string, opID i
 
 	go func() {
 		for _, m := range machines {
+			tm.mu.Lock()
+			if task.Progress != nil {
+				task.Progress.Current = m.Name
+				task.Progress.Phase = "正在执行清理项"
+			}
+			tm.mu.Unlock()
 			res, err := tm.runOnMachine(m, items)
 			if err != nil {
 				tm.mu.Lock()
@@ -148,11 +165,19 @@ func (tm *TaskManager) StartCleanup(machineIDs []int64, itemIDs []string, opID i
 					MachineID: m.ID, Machine: m.Name, Status: "failed",
 					ItemName: "连接", Output: err.Error(),
 				})
+				if task.Progress != nil {
+					task.Progress.DoneMachines++
+					task.Progress.Pct = int(float64(task.Progress.DoneMachines) / float64(task.Progress.TotalMachines) * 100)
+				}
 				tm.mu.Unlock()
 				continue
 			}
 			tm.mu.Lock()
 			task.Results = append(task.Results, res...)
+			if task.Progress != nil {
+				task.Progress.DoneMachines++
+				task.Progress.Pct = int(float64(task.Progress.DoneMachines) / float64(task.Progress.TotalMachines) * 100)
+			}
 			tm.mu.Unlock()
 		}
 		tm.mu.Lock()

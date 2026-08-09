@@ -186,9 +186,23 @@
         <div class="card-head">
           <h3>任务 #{{ t.id }}</h3>
           <span class="badge badge--accent">{{ typeText(t.type) }}</span>
-          <span class="badge" :class="statusBadge(t.status)">{{ t.status }}</span>
+          <span class="badge" :class="statusBadge(t.status)">{{ statusText2(t.status) }}</span>
           <span class="grow" />
           <span class="dim small">{{ t.createdAt }} · {{ t.operator }}</span>
+        </div>
+        <div v-if="t.progress" class="prog" :class="{ 'prog--done': t.status === 'done' }">
+          <div class="prog-row">
+            <span class="prog-label">
+              <template v-if="t.status === 'running'">
+                <b>{{ t.progress.current }}</b>：{{ t.progress.phase }}
+              </template>
+              <template v-else>
+                {{ t.progress.doneMachines }} / {{ t.progress.totalMachines }} 台机器处理完成
+              </template>
+            </span>
+            <span class="prog-pct">{{ t.status === 'running' ? t.progress.pct + '%' : '100%' }}</span>
+          </div>
+          <div class="prog-track"><div class="prog-fill" :style="{ width: (t.status === 'running' ? t.progress.pct : 100) + '%' }"></div></div>
         </div>
         <div class="table-wrap">
           <table class="table">
@@ -325,6 +339,9 @@ async function runDiagnose() {
 
 function statusBadge(s) {
   return { pass: 'badge--ok', ok: 'badge--ok', running: 'badge--accent', warn: 'badge--warn', failed: 'badge--danger', fail: 'badge--danger', skipped: '' }[s] || ''
+}
+function statusText2(s) {
+  return { running: '进行中', done: '已完成' }[s] || s
 }
 function typeText(t) {
   return { cleanup: '一键清理', scan: '病毒扫描' }[t] || t

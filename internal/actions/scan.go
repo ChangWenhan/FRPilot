@@ -12,9 +12,9 @@ import (
 
 // 病毒扫描模式
 const (
-	ScanModeQuick   = "quick"    // ClamAV 快速：常用目录
-	ScanModeFull    = "full"     // ClamAV 全盘：/
-	ScanModeRootkit = "rootkit"  // rkhunter + chkrootkit
+	ScanModeQuick   = "quick"   // ClamAV 快速：常用目录
+	ScanModeFull    = "full"    // ClamAV 全盘：/
+	ScanModeRootkit = "rootkit" // rkhunter + chkrootkit
 )
 
 var scanModeLabels = map[string]string{
@@ -24,6 +24,62 @@ var scanModeLabels = map[string]string{
 }
 
 var clamInfectedRe = regexp.MustCompile(`^(.+?):\s*(FOUND|ERROR)(\.\d+)?\s*$`)
+
+const (
+	quickPerDirTimeout = 8 * time.Minute // 快速模式：单目录超时
+	fullPerDirTimeout  = 30 * time.Minute // 全盘模式：单目录超时
+	rootkitPhaseTimeout = 10 * time.Minute
+)
+
+// scanPhase 单台机器内的一个扫描阶段（一个 SSH 命令）。
+type scanPhase struct {
+	label   string
+	cmd     string
+	timeout time.Duration
+	// marker 该阶段工具缺失时的输出标记；命中后跳过后续阶段。
+	marker string
+}
+
+// scanPhases 按模式构造扫描阶段序列（逐目录执行，便于实时进度）。
+func scanPhases(mode string) []scanPhase {
+	switch mode {
+	case ScanModeQuick:
+		dirs := []string{"/etc", "/home", "/tmp", "/opt", "/usr/local", "/root", "/var/www"}
+		return dirPhases(dirs, quickPerDirTimeout)
+	case ScanModeFull:
+		dirs := []string{"/bin", "/boot", "/etc", "/home", "/lib", "/lib64", "/media", "/mnt",
+			"/opt", "/root", "/sbin", "/srv", "/tmp", "/usr", "/var"}
+		return dirPhases(dirs, fullPerDirTimeout)
+	default:
+		return []scanPhase{
+			{
+				label:   "rkhunter 检查",
+				cmd:     `command -v rkhunter >/dev/null 2>&1 && rkhunter --check --skip-keypress --nocolors --no-version-check 2>&1 || echo "__NO_RKHUNTER__"`,
+				timeout: rootkitPhaseTimeout,
+				marker:  "__NO_RKHUNTER__",
+			},
+			{
+				label:   "chkrootkit 检查",
+				cmd:     `command -v chkrootkit >/dev/null 2>&1 && chkrootkit 2>&1 || echo "__NO_CHKROOTKIT__"`,
+				timeout: rootkitPhaseTimeout,
+				marker:  "__NO_CHKROOTKIT__",
+			},
+		}
+	}
+}
+
+func dirPhases(dirs []string, perDirTimeout time.Duration) []scanPhase {
+	phases := make([]scanPhase, 0, len(dirs))
+	for i, d := range dirs {
+		phases = append(phases, scanPhase{
+			label:   fmt.Sprintf("扫描 %s（%d/%d）", d, i+1, len(dirs)),
+			cmd:     fmt.Sprintf(`command -v clamscan >/dev/null 2>&1 && clamscan -r -i --no-banner --max-filesize=128M --max-scansize=512M %s 2>&1 || echo "__NO_CLAMAV__"`, d),
+			timeout: perDirTimeout,
+			marker:  "__NO_CLAMAV__",
+		})
+	}
+	return phases
+}
 
 // StartScan 创建并后台执行病毒扫描任务（复用清理任务的异步机制）。
 // mode: quick（ClamAV 常用目录）| full（ClamAV 全盘）| rootkit（rkhunter/chkrootkit）
@@ -48,13 +104,37 @@ func (tm *TaskManager) StartScan(machineIDs []int64, mode string, opID int64, op
 	}
 
 	task := tm.newTask("scan", opID, opName)
+	task.Progress = &TaskProgress{
+		TotalMachines: len(machines),
+		Current:       machines[0].Name,
+		Phase:         "准备中",
+	}
 	_ = tm.db.Log(opID, opName, "scan_start", fmt.Sprintf("机器 %d 台", len(machines)), "模式: "+scanModeLabels[mode])
 
 	go func() {
 		for _, m := range machines {
-			res := tm.scanMachine(m, mode)
+			report := func(label string, machineFrac float64) {
+				tm.mu.Lock()
+				defer tm.mu.Unlock()
+				p := task.Progress
+				if p == nil {
+					return
+				}
+				p.Current = m.Name
+				p.Phase = label
+				pct := (float64(p.DoneMachines) + machineFrac) / float64(p.TotalMachines) * 100
+				if pct > 99 && p.DoneMachines < p.TotalMachines {
+					pct = 99 // 最后一台完成前不满 100%
+				}
+				p.Pct = int(pct)
+			}
+			res := tm.scanMachine(m, mode, report)
 			tm.mu.Lock()
 			task.Results = append(task.Results, res)
+			if task.Progress != nil {
+				task.Progress.DoneMachines++
+				task.Progress.Pct = int(float64(task.Progress.DoneMachines) / float64(task.Progress.TotalMachines) * 100)
+			}
 			tm.mu.Unlock()
 		}
 		tm.mu.Lock()
@@ -65,8 +145,8 @@ func (tm *TaskManager) StartScan(machineIDs []int64, mode string, opID int64, op
 	return task, nil
 }
 
-// scanMachine 对单台机器执行扫描，返回结构化结果。
-func (tm *TaskManager) scanMachine(m *store.Machine, mode string) *TaskResult {
+// scanMachine 对单台机器分阶段执行扫描；report 每完成一个阶段回调一次进度。
+func (tm *TaskManager) scanMachine(m *store.Machine, mode string, report func(label string, machineFrac float64)) *TaskResult {
 	start := time.Now()
 	res := &TaskResult{MachineID: m.ID, Machine: m.Name, ItemID: mode, ItemName: scanModeLabels[mode]}
 
@@ -89,6 +169,7 @@ func (tm *TaskManager) scanMachine(m *store.Machine, mode string) *TaskResult {
 	if host == "" {
 		host = "127.0.0.1"
 	}
+	report("正在连接并检测扫描工具", 0)
 	conn, err := sshx.Dial(host, m.TunnelPort, m.SSHUser, pass)
 	if err != nil {
 		res.Status = "failed"
@@ -97,37 +178,49 @@ func (tm *TaskManager) scanMachine(m *store.Machine, mode string) *TaskResult {
 	}
 	defer conn.Close()
 
-	cmd, timeout := scanCommand(mode)
-	out, errOut, err := conn.RunSudo(cmd, sudoPass, timeout)
-	res.Duration = time.Since(start).Round(10 * time.Millisecond).String()
-	combined := out
-	if errOut != "" {
-		combined += "\n" + errOut
+	phases := scanPhases(mode)
+	noTool := ""
+	var raws []string
+	for i, ph := range phases {
+		report(ph.label, float64(i)/float64(len(phases)))
+		out, errOut, err := conn.RunSudo(ph.cmd, sudoPass, ph.timeout)
+		raw := out
+		if errOut != "" {
+			raw += "\n" + errOut
+		}
+		raws = append(raws, raw)
+		if strings.Contains(raw, ph.marker) {
+			noTool = ph.marker
+			break
+		}
+		if err != nil {
+			res.Status = "failed"
+			res.Output = fmt.Sprintf("扫描被中断（可能超时）: %v\n%s", err, summarizeScan(mode, strings.Join(raws, "\n")))
+			res.Duration = time.Since(start).Round(10 * time.Millisecond).String()
+			return res
+		}
 	}
-	res.Output = summarizeScan(mode, combined)
-	if err != nil {
-		res.Status = "failed"
-		res.Output = fmt.Sprintf("扫描被中断（可能超时）: %v\n%s", err, res.Output)
+	res.Duration = time.Since(start).Round(10 * time.Millisecond).String()
+	res.Output = summarizeScan(mode, strings.Join(raws, "\n"))
+	if noTool != "" {
+		res.Status = "skipped"
+		res.Output = toolMissingNote(noTool)
 		return res
 	}
 	res.Status = "ok"
 	return res
 }
 
-// scanCommand 构造远端扫描命令与超时。
-func scanCommand(mode string) (string, time.Duration) {
-	switch mode {
-	case ScanModeQuick:
-		return `command -v clamscan >/dev/null 2>&1 && clamscan -r -i --no-banner --max-filesize=128M --max-scansize=512M /etc /home /tmp /opt /usr/local /root /var/www 2>&1 || echo "__NO_CLAMAV__"`, 30 * time.Minute
-	case ScanModeFull:
-		return `command -v clamscan >/dev/null 2>&1 && clamscan -r -i --no-banner --exclude-dir=/proc --exclude-dir=/sys --exclude-dir=/dev --exclude-dir=/run / 2>&1 || echo "__NO_CLAMAV__"`, 4 * time.Hour
-	default: // rootkit
-		return `out=""; if command -v rkhunter >/dev/null 2>&1; then out="$out
-[RKHUNTER]
-$(rkhunter --check --skip-keypress --nocolors --no-version-check 2>&1)"; fi; if command -v chkrootkit >/dev/null 2>&1; then out="$out
-[CHKROOTKIT]
-$(chkrootkit 2>&1)"; fi; [ -n "$out" ] && echo "$out" || echo "__NO_SCANNER__"`, 20 * time.Minute
+func toolMissingNote(marker string) string {
+	switch marker {
+	case "__NO_CLAMAV__":
+		return "未检测到 ClamAV（apt install clamav clamav-daemon 后重试）"
+	case "__NO_RKHUNTER__":
+		return "未检测到 rkhunter"
+	case "__NO_CHKROOTKIT__":
+		return "未检测到 chkrootkit"
 	}
+	return "未检测到对应扫描工具"
 }
 
 // summarizeScan 从原始输出中提炼摘要：威胁清单 + 统计。
@@ -167,9 +260,6 @@ func summarizeScan(mode, raw string) string {
 		}
 		return sb.String()
 	default: // rootkit
-		if strings.Contains(raw, "__NO_SCANNER__") {
-			return "未检测到 rkhunter / chkrootkit"
-		}
 		var warns []string
 		for _, line := range strings.Split(raw, "\n") {
 			l := strings.TrimSpace(line)

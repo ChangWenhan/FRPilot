@@ -57,17 +57,27 @@ suspicious /usr/bin/evil: INFECTED
 	}
 }
 
-func TestScanCommandModes(t *testing.T) {
-	cmd, _ := scanCommand(ScanModeQuick)
-	if !strings.Contains(cmd, "clamscan") || !strings.Contains(cmd, "__NO_CLAMAV__") {
-		t.Fatalf("quick 命令异常: %s", cmd)
+func TestScanPhases(t *testing.T) {
+	quick := scanPhases(ScanModeQuick)
+	if len(quick) != 7 {
+		t.Fatalf("quick 应有 7 个目录阶段, got %d", len(quick))
 	}
-	cmd, _ = scanCommand(ScanModeFull)
-	if !strings.Contains(cmd, "exclude-dir=/proc") {
-		t.Fatalf("full 命令应排除 /proc: %s", cmd)
+	if !strings.Contains(quick[0].label, "/etc") || !strings.Contains(quick[0].label, "1/7") {
+		t.Fatalf("quick 阶段标签异常: %s", quick[0].label)
 	}
-	cmd, _ = scanCommand(ScanModeRootkit)
-	if !strings.Contains(cmd, "rkhunter") || !strings.Contains(cmd, "chkrootkit") {
-		t.Fatalf("rootkit 命令异常: %s", cmd)
+	for _, ph := range quick {
+		if !strings.Contains(ph.cmd, "clamscan") || ph.marker != "__NO_CLAMAV__" {
+			t.Fatalf("quick 阶段命令异常: %s", ph.cmd)
+		}
+	}
+	full := scanPhases(ScanModeFull)
+	for _, ph := range full {
+		if strings.Contains(ph.cmd, "/proc") || strings.Contains(ph.cmd, "/sys") {
+			t.Fatalf("full 不应包含虚拟文件系统目录: %s", ph.cmd)
+		}
+	}
+	rootkit := scanPhases(ScanModeRootkit)
+	if len(rootkit) != 2 || !strings.Contains(rootkit[0].cmd, "rkhunter") || !strings.Contains(rootkit[1].cmd, "chkrootkit") {
+		t.Fatalf("rootkit 阶段异常: %+v", rootkit)
 	}
 }

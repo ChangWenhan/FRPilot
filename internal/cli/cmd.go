@@ -720,6 +720,9 @@ func cmdTasks(c *Client, rest []string, jsonOut bool) error {
 	}
 	for _, t := range resp.Tasks {
 		fmt.Printf("任务 #%v [%s] %s 于 %v 由 %s 发起\n", t["id"], t["status"], t["type"], t["createdAt"], t["operator"])
+		if p, ok := t["progress"].(map[string]any); ok && fmt.Sprint(t["status"]) == "running" {
+			fmt.Printf("  进度: %v%% | 当前 %v：%v\n", p["pct"], p["current"], p["phase"])
+		}
 		results, _ := t["results"].([]any)
 		for _, raw := range results {
 			r := raw.(map[string]any)
