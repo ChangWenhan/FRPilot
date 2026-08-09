@@ -1,53 +1,75 @@
 <template>
   <div>
-    <h2>流量与带宽</h2>
+    <div class="page-head">
+      <h2>流量与带宽</h2>
+      <span class="sub">每 15 秒自动刷新</span>
+    </div>
+
     <p v-if="!snap" class="empty">加载中...</p>
     <template v-if="snap">
       <p v-if="snap.message" class="notice">{{ snap.message }}</p>
       <template v-if="snap.flows && snap.flows.length">
-        <div class="cards">
-          <div class="card"><div class="num">{{ fmtBytes(snap.totalIn) }}</div><div class="label">累计入流量</div></div>
-          <div class="card"><div class="num">{{ fmtBytes(snap.totalOut) }}</div><div class="label">累计出流量</div></div>
-          <div class="card"><div class="num small">{{ fmtBytes(snap.rateInSum) }}/s ↓</div><div class="label">实时入速率</div></div>
-          <div class="card"><div class="num small">{{ fmtBytes(snap.rateOutSum) }}/s ↑</div><div class="label">实时出速率</div></div>
-          <div class="card">
-            <div class="num green small">{{ snap.top?.proxy }}</div>
-            <div class="label">带宽主要流向</div>
+        <div class="stat-grid">
+          <div class="stat"><div class="v">{{ fmtBytes(snap.totalIn) }}</div><div class="l">累计入流量</div></div>
+          <div class="stat"><div class="v">{{ fmtBytes(snap.totalOut) }}</div><div class="l">累计出流量</div></div>
+          <div class="stat"><div class="v v--ok v--sm">{{ fmtBytes(snap.rateInSum) }}/s ↓</div><div class="l">实时入速率</div></div>
+          <div class="stat"><div class="v v--ok v--sm">{{ fmtBytes(snap.rateOutSum) }}/s ↑</div><div class="l">实时出速率</div></div>
+          <div class="stat">
+            <div class="v v--warn v--sm truncate" :title="snap.top?.proxy">{{ snap.top?.proxy || '-' }}</div>
+            <div class="l">带宽主要流向</div>
           </div>
         </div>
 
-        <div v-if="snap.anomalies && snap.anomalies.length" class="anomaly-bar">
-          ⚠ 流量异常：{{ snap.anomalies.map(a => a.proxy).join('、') }} 出现速率突增
+        <div v-if="snap.anomalies && snap.anomalies.length" class="notice">
+          <b>⚠ 流量异常：</b>{{ snap.anomalies.map(a => a.proxy).join('、') }} 出现速率突增
         </div>
 
-        <div class="chart-wrap">
+        <div class="chart-box">
           <h3>带宽流向 Top（实时速率）</h3>
           <div ref="flowChart" class="chart"></div>
         </div>
 
-        <section>
-          <h3>各机器流量明细</h3>
-          <div class="table-wrap"><table>
-            <thead><tr><th>机器</th><th>累计入</th><th>累计出</th><th>入速率</th><th>出速率</th><th>入占比</th><th>状态</th></tr></thead>
-            <tbody>
-              <tr v-for="f in snap.flows" :key="f.proxy">
-                <td><b>{{ f.proxy }}</b></td>
-                <td>{{ fmtBytes(f.inBytes) }}</td>
-                <td>{{ fmtBytes(f.outBytes) }}</td>
-                <td>{{ fmtBytes(f.rateIn) }}/s</td>
-                <td>{{ fmtBytes(f.rateOut) }}/s</td>
-                <td>{{ f.pctIn }}%</td>
-                <td><span v-if="f.anomaly" class="badge danger">突增</span><span v-else class="dim">正常</span></td>
-              </tr>
-            </tbody>
-          </table></div>
-        </section>
+        <div class="card" style="margin-top: 16px">
+          <div class="card-head">
+            <h3>各机器流量明细</h3>
+            <span class="grow" />
+            <span class="dim">{{ snap.flows.length }} 台</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>机器</th><th class="num">累计入</th><th class="num">累计出</th>
+                  <th class="num">入速率</th><th class="num">出速率</th><th class="num">入占比</th><th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="f in snap.flows" :key="f.proxy">
+                  <td><b class="truncate d-block" :title="f.proxy">{{ f.proxy }}</b></td>
+                  <td class="num">{{ fmtBytes(f.inBytes) }}</td>
+                  <td class="num">{{ fmtBytes(f.outBytes) }}</td>
+                  <td class="num">{{ fmtBytes(f.rateIn) }}/s</td>
+                  <td class="num">{{ fmtBytes(f.rateOut) }}/s</td>
+                  <td class="num">{{ f.pctIn }}%</td>
+                  <td>
+                    <span v-if="f.anomaly" class="badge badge--danger">突增</span>
+                    <span v-else class="badge badge--ok">正常</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        <div class="chart-wrap">
-          <h3>24 小时流量速率趋势 <button class="control control--sm control--ghost" @click="loadHistory">刷新</button></h3>
-          <div ref="trendChart" class="chart tall"></div>
+        <div class="chart-box">
+          <div class="chart-head">
+            <h3>24 小时流量速率趋势</h3>
+            <button class="btn btn--ghost btn--sm" @click="loadHistory">刷新</button>
+          </div>
+          <div ref="trendChart" class="chart chart--tall"></div>
         </div>
       </template>
+      <p v-else class="empty">暂无流量数据（frps 未配置或隧道无流量）</p>
     </template>
   </div>
 </template>
@@ -86,7 +108,6 @@ async function load() {
 async function loadHistory() {
   const r = await get('/api/traffic/history?hours=24')
   if (!r.points?.length) return
-  // 按时间聚合所有 proxy 的入/出速率
   const byTs = new Map()
   for (const p of r.points) {
     const ts = p.ts.slice(0, 16)
@@ -111,10 +132,10 @@ function drawFlow() {
     } },
     grid: { left: 120, right: 30, top: 10, bottom: 25 },
     xAxis: { type: 'value' },
-    yAxis: { type: 'category', data: sorted.map(f => f.proxy) },
+    yAxis: { type: 'category', data: sorted.map(f => f.proxy), axisLabel: { color: '#8b9cbd', overflow: 'truncate', width: 100 } },
     series: [
       { name: '入', type: 'bar', stack: 't', data: sorted.map(f => f.rateIn), itemStyle: { color: '#38bdf8' } },
-      { name: '出', type: 'bar', stack: 't', data: sorted.map(f => f.rateOut), itemStyle: { color: '#4ade80' } },
+      { name: '出', type: 'bar', stack: 't', data: sorted.map(f => f.rateOut), itemStyle: { color: '#34d399' } },
     ],
   })
 }
@@ -124,38 +145,21 @@ function drawTrend(times, inData, outData) {
   if (!trendInst) trendInst = echarts.init(trendChart.value)
   trendInst.setOption({
     tooltip: { trigger: 'axis', formatter: p => p.map(x => `${x.seriesName}: ${fmtBytes(x.value)}/s`).join('<br/>') },
-    legend: { data: ['入速率', '出速率'], textStyle: { color: '#94a3b8' } },
+    legend: { data: ['入速率', '出速率'], textStyle: { color: '#8b9cbd' } },
     grid: { left: 60, right: 20, top: 30, bottom: 40 },
-    xAxis: { type: 'category', data: times, axisLabel: { color: '#64748b' } },
-    yAxis: { type: 'value', axisLabel: { color: '#64748b' } },
+    xAxis: { type: 'category', data: times, axisLabel: { color: '#5f7194' } },
+    yAxis: { type: 'value', axisLabel: { color: '#5f7194' } },
     series: [
       { name: '入速率', type: 'line', data: inData, smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } },
-      { name: '出速率', type: 'line', data: outData, smooth: true, showSymbol: false, itemStyle: { color: '#4ade80' } },
+      { name: '出速率', type: 'line', data: outData, smooth: true, showSymbol: false, itemStyle: { color: '#34d399' } },
     ],
   })
 }
 </script>
 
 <style scoped>
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 14px 0; }
-.card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; text-align: center; }
-.num { font-size: 24px; font-weight: 700; color: #38bdf8; word-break: break-all; }
-.num.small { font-size: 16px; }
-.num.green { color: #4ade80; }
-.label { color: #64748b; font-size: 12px; margin-top: 4px; }
-.anomaly-bar { background: #7f1d1d55; border: 1px solid #7f1d1d; color: #f87171; padding: 10px 14px; border-radius: 8px; margin: 10px 0; }
-.chart-wrap { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-top: 16px; }
-.chart { width: 100%; height: 260px; }
-.chart.tall { height: 300px; }
-@media (max-width: 768px) { .chart { height: 220px; } .chart.tall { height: 260px; } }
-h3 { margin: 0 0 10px; font-size: 15px; }
-section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-top: 16px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px; border-bottom: 1px solid #1e293b; font-size: 13px; }
-th { color: #64748b; font-weight: 500; }
-.badge.danger { background: #7f1d1d; color: #f87171; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-.dim { color: #64748b; }
-.empty { color: #64748b; }
-.notice { background: #78350f33; border: 1px solid #78350f; color: #fbbf24; padding: 10px 14px; border-radius: 8px; }
-button.small { background: #334155; color: #cbd5e1; border: none; border-radius: 5px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.truncate { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-block { display: block; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.chart-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
 </style>

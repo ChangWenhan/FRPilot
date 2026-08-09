@@ -1,45 +1,59 @@
 <template>
   <div>
-    <h2>总览</h2>
-    <div v-if="status" class="cards">
-      <div class="card">
-        <div class="num">{{ status.machines.total }}</div>
-        <div class="label">机器总数</div>
-      </div>
-      <div class="card">
-        <div class="num green">{{ status.machines.enabled }}</div>
-        <div class="label">监控中</div>
-      </div>
-      <div class="card">
-        <div class="num amber">{{ status.machines.pending }}</div>
-        <div class="label">待配置</div>
-      </div>
-      <div class="card" v-if="status.frps">
-        <div class="num">{{ status.frps.clients }}</div>
-        <div class="label">frps 在线客户端</div>
-      </div>
-      <div class="card" v-if="status.frps">
-        <div class="num small">{{ fmtBytes(status.frps.trafficIn) }} / {{ fmtBytes(status.frps.trafficOut) }}</div>
-        <div class="label">入 / 出流量（累计）</div>
+    <div class="page-head">
+      <h2>总览</h2>
+      <span class="sub">每 15 秒自动刷新</span>
+    </div>
+
+    <div v-if="status" class="stat-grid">
+      <div class="stat"><div class="v">{{ status.machines.total }}</div><div class="l">机器总数</div></div>
+      <div class="stat"><div class="v v--ok">{{ status.machines.enabled }}</div><div class="l">监控中</div></div>
+      <div class="stat"><div class="v v--warn">{{ status.machines.pending }}</div><div class="l">待配置</div></div>
+      <div class="stat"><div class="v">{{ status.frps?.clients ?? '-' }}</div><div class="l">frps 在线客户端</div></div>
+      <div class="stat">
+        <div class="v v--sm">{{ fmtBytes(status.frps?.trafficIn) }} / {{ fmtBytes(status.frps?.trafficOut) }}</div>
+        <div class="l">累计入 / 出流量</div>
       </div>
     </div>
-    <div class="token-bar">
-      token 基线 <code>{{ status?.tokenSet ? status?.tokenMask : '未设置' }}</code>
-      <span class="badge">已保护，不在页面回显原文</span>
+
+    <div class="card" style="margin-top: 16px">
+      <div class="card-head">
+        <h3>token 基线</h3>
+        <code>{{ status?.tokenSet ? status?.tokenMask : '未设置' }}</code>
+        <span class="badge badge--ok">已保护，不回显原文</span>
+      </div>
     </div>
-    <h3>机器状态</h3>
-    <div class="table-wrap"><table>
-      <thead><tr><th>名称</th><th>隧道端口</th><th>状态</th><th>凭据</th><th>最近在线</th></tr></thead>
-      <tbody>
-        <tr v-for="m in machines" :key="m.id">
-          <td>{{ m.name }}</td>
-          <td>{{ m.tunnelPort }}</td>
-          <td><span class="badge" :class="m.status">{{ statusText[m.status] }}</span></td>
-          <td>{{ m.hasCredentials ? '已配置' : '未配置' }}</td>
-          <td>{{ m.lastSeenAt ? new Date(m.lastSeenAt).toLocaleString() : '-' }}</td>
-        </tr>
-      </tbody>
-    </table></div>
+
+    <div class="card" style="margin-top: 16px">
+      <div class="card-head">
+        <h3>机器状态</h3>
+        <span class="grow" />
+        <span class="dim">{{ machines.length }} 台</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th class="num">隧道端口</th>
+              <th>状态</th>
+              <th>凭据</th>
+              <th>最近在线</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="m in machines" :key="m.id">
+              <td><span class="truncate d-block" :title="m.name">{{ m.name }}</span></td>
+              <td class="num">{{ m.tunnelPort || '-' }}</td>
+              <td><span class="badge" :class="badgeCls(m.status)">{{ statusText[m.status] }}</span></td>
+              <td class="muted-cell">{{ m.hasCredentials ? '已配置' : '未配置' }}</td>
+              <td class="muted-cell">{{ m.lastSeenAt ? fmtTs(m.lastSeenAt) : '-' }}</td>
+            </tr>
+            <tr v-if="!machines.length"><td colspan="5" class="empty-row">暂无机器数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -51,35 +65,23 @@ const status = ref(null)
 const machines = ref([])
 
 onMounted(async () => {
+  await load()
+  setInterval(load, 15000)
+})
+
+async function load() {
   status.value = await get('/api/status')
   const r = await get('/api/machines')
   machines.value = r.machines
-  setInterval(async () => {
-    status.value = await get('/api/status')
-    const r2 = await get('/api/machines')
-    machines.value = r2.machines
-  }, 15000)
-})
+}
+
+function badgeCls(s) {
+  return { pending: 'badge--warn', configured: 'badge--accent', enabled: 'badge--ok', disabled: '' }[s] || ''
+}
+function fmtTs(t) { return new Date(t).toLocaleString() }
 </script>
 
 <style scoped>
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin: 16px 0; }
-.card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 18px; text-align: center; }
-.num { font-size: 30px; font-weight: 700; color: #38bdf8; }
-.num.small { font-size: 18px; }
-.num.green { color: #4ade80; }
-.num.amber { color: #fbbf24; }
-.label { color: #64748b; font-size: 12px; margin-top: 4px; }
-.token-bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
-code { background: #0f172a; padding: 2px 8px; border-radius: 4px; color: #4ade80; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #334155; color: #94a3b8; margin-left: 6px; }
-.badge.enabled { background: #14532d; color: #4ade80; }
-.badge.pending { background: #78350f; color: #fbbf24; }
-.badge.disabled { background: #374151; color: #9ca3af; }
-.badge.configured { background: #1e3a8a; color: #93c5fd; }
-h3 { color: #94a3b8; margin-top: 28px; }
-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-@media (max-width: 768px) { .num { font-size: 24px; } }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1e293b; font-size: 14px; }
-th { color: #64748b; font-weight: 500; }
+.truncate { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-block { display: block; }
 </style>

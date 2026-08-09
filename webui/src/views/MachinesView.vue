@@ -1,57 +1,90 @@
 <template>
   <div>
-    <div class="head page-head">
+    <div class="page-head">
       <h2>机器管理</h2>
-      <button v-if="isAdmin" class="control" @click="discover">重新扫描 frps</button>
+      <span class="sub">共 {{ machines.length }} 台</span>
+      <span class="grow" />
+      <button v-if="isAdmin" class="btn btn--ghost btn--sm" @click="discover">重新扫描 frps</button>
     </div>
-    <p v-if="discoverMsg" class="ok">{{ discoverMsg }}</p>
-    <div class="table-wrap"><table>
-      <thead>
-        <tr><th>ID</th><th>名称</th><th>隧道端口</th><th>状态</th><th>SSH 凭据</th><th>监控开关</th></tr>
-      </thead>
-      <tbody>
-        <tr v-for="m in machines" :key="m.id">
-          <td>{{ m.id }}</td>
-          <td><b>{{ m.name }}</b></td>
-          <td>{{ m.tunnelPort }}</td>
-          <td><span class="badge" :class="m.status">{{ statusText[m.status] }}</span></td>
-          <td>
-            <template v-if="editId === m.id">
-              <div class="cred-edit">
-                <input v-model="credUser" placeholder="SSH 用户" class="control-input control-input--inline inline" />
-                <input v-model="credPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" class="control-input control-input--inline inline" />
-                <input v-model="sudoPass" type="password" placeholder="sudo 密码(留空不变)" title="执行需要 root 的命令时使用（采集/清理自动走 sudo）" autocomplete="new-password" class="control-input control-input--inline inline" />
-                <button class="control control--sm control--success" @click="saveCreds(m)">保存</button>
-                <button class="control control--sm control--ghost" @click="editId = null">取消</button>
-              </div>
+    <p v-if="discoverMsg" class="msg msg--ok">{{ discoverMsg }}</p>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width: 52px" class="num">ID</th>
+              <th>名称</th>
+              <th class="num">隧道端口</th>
+              <th>状态</th>
+              <th>SSH 凭据</th>
+              <th style="width: 90px" class="num">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="m in machines" :key="m.id">
+              <tr>
+                <td class="num muted-cell">{{ m.id }}</td>
+                <td>
+                  <b class="truncate d-block" :title="m.name">{{ m.name }}</b>
+                </td>
+                <td class="num">{{ m.tunnelPort || '-' }}</td>
+                <td><span class="badge" :class="badgeCls(m.status)">{{ statusText[m.status] }}</span></td>
+                <td>
+                  <span :title="m.hasCredentials ? `${m.sshUser}${m.hasSudo ? ' +sudo' : ''}` : ''">
+                    {{ m.hasCredentials ? `${m.sshUser}${m.hasSudo ? ' +sudo' : ''}` : '未配置' }}
+                  </span>
+                </td>
+                <td>
+                  <div class="td-actions">
+                    <router-link class="btn btn--ghost btn--sm btn--icon" :to="`/machines/${m.id}`" title="详情">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </router-link>
+                    <ActionMenu v-if="isAdmin" :items="menuItems(m)" @action="k => onAction(k, m)" />
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="editId === m.id" class="edit-row">
+                <td colspan="6">
+                  <div class="edit-panel">
+                    <div class="edit-fields">
+                      <div class="field">
+                        <label>SSH 用户</label>
+                        <input class="input" v-model="credUser" placeholder="如 root" autocomplete="off" />
+                      </div>
+                      <div class="field">
+                        <label>SSH 密码</label>
+                        <input class="input" v-model="credPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" />
+                      </div>
+                      <div class="field">
+                        <label>sudo 密码 <span class="hint">执行 root 命令时使用</span></label>
+                        <input class="input" v-model="sudoPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" />
+                      </div>
+                    </div>
+                    <div class="edit-actions">
+                      <button class="btn btn--ghost btn--sm" @click="editId = null">取消</button>
+                      <button class="btn btn--sm" @click="saveCreds(m)">保存凭据</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
             </template>
-            <template v-else>
-              <span>{{ m.hasCredentials ? `已配置 (${m.sshUser}${m.hasSudo ? '+sudo' : ''})` : '未配置' }}</span>
-                <button v-if="isAdmin" class="control control--sm control--ghost" @click="startEdit(m)">编辑</button>
-            </template>
-          </td>
-          <td>
-            <button v-if="isAdmin" :class="['control', 'control--sm', m.enabled ? 'control--danger' : 'control--success']"
-              @click="toggle(m)">
-              {{ m.enabled ? '停用监控' : (m.hasCredentials ? '启用监控' : '待配置凭据') }}
-            </button>
-            <span v-else>{{ m.enabled ? '监控中' : '未启用' }}</span>
-            <a class="control control--sm control--ghost small link" :href="`/machines/${m.id}`">详情 →</a>
-          </td>
-        </tr>
-        <tr v-if="!machines.length">
-          <td colspan="6" class="empty">
-            尚未发现机器。请先在「设置」配置 frps 连接信息，然后点击「重新扫描 frps」。
-          </td>
-        </tr>
-      </tbody>
-    </table></div>
+            <tr v-if="!machines.length">
+              <td colspan="6" class="empty-row">
+                尚未发现机器。请先在「设置」配置 frps 连接信息，然后点击「重新扫描 frps」。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { get, post, statusText } from '../api.js'
+import ActionMenu from '../components/ActionMenu.vue'
 
 const machines = ref([])
 const editId = ref(null)
@@ -80,6 +113,23 @@ async function discover() {
   await load()
 }
 
+function badgeCls(s) {
+  return { pending: 'badge--warn', configured: 'badge--accent', enabled: 'badge--ok', disabled: 'badge' }[s] || ''
+}
+
+function menuItems(m) {
+  return [
+    { key: 'edit', label: m.hasCredentials ? '编辑凭据' : '配置凭据', icon: pencilIcon() },
+    { key: m.enabled ? 'disable' : 'enable', label: m.enabled ? '停用监控' : (m.hasCredentials ? '启用监控' : '待配置凭据'), icon: m.enabled ? stopIcon() : playIcon(), disabled: !m.hasCredentials && !m.enabled },
+    { key: 'detail', label: '查看详情', icon: eyeIcon() },
+  ]
+}
+function onAction(k, m) {
+  if (k === 'edit') startEdit(m)
+  else if (k === 'enable' || k === 'disable') toggle(m)
+  else if (k === 'detail') location.href = `/machines/${m.id}`
+}
+
 function startEdit(m) {
   editId.value = m.id
   credUser.value = m.sshUser || ''
@@ -97,32 +147,19 @@ async function toggle(m) {
   await post(`/api/machines/${m.id}/enable`, { enabled: !m.enabled })
   await load()
 }
+
+function pencilIcon() { return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>' }
+function playIcon() { return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' }
+function stopIcon() { return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>' }
+function eyeIcon() { return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' }
 </script>
 
 <style scoped>
-.head { display: flex; justify-content: space-between; align-items: center; }
-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-@media (max-width: 768px) {
-  .inline { width: 90px; }
-  .head h2 { font-size: 18px; }
-}
-th, td { text-align: left; padding: 10px; border-bottom: 1px solid #1e293b; font-size: 14px; }
-th { color: #64748b; font-weight: 500; }
-.inline { width: 110px; margin-right: 6px; background: #0f172a; border: 1px solid #334155; border-radius: 5px; padding: 6px 8px; color: #e2e8f0; }
-.cred-edit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.cred-edit .inline { width: 120px; margin-right: 0; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #334155; color: #94a3b8; }
-.badge.enabled { background: #14532d; color: #4ade80; }
-.badge.pending { background: #78350f; color: #fbbf24; }
-.badge.disabled { background: #374151; color: #9ca3af; }
-.badge.configured { background: #1e3a8a; color: #93c5fd; }
-button.small { padding: 5px 10px; font-size: 12px; margin-left: 6px; border-radius: 5px; border: none; cursor: pointer; }
-.ok { background: #0ea5e9; color: #fff; }
-.ok:hover { background: #0284c7; }
-.danger { background: #ef4444; color: #fff; }
-.ghost { background: #334155; color: #cbd5e1; }
-.empty { text-align: center; color: #64748b; padding: 32px; }
-.ok { color: #4ade80; }
-a.link { color: #38bdf8; text-decoration: none; margin-left: 8px; font-size: 12px; }
-a.link:hover { text-decoration: underline; }
+.truncate { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-block { display: block; }
+.td-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.edit-row td { background: rgba(56, 189, 248, .03); }
+.edit-panel { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

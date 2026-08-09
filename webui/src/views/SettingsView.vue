@@ -1,107 +1,159 @@
 <template>
   <div>
-    <h2>设置</h2>
-    <p v-if="!settings" class="loading">加载中...</p>
+    <div class="page-head">
+      <h2>设置</h2>
+      <span class="sub">保存后立即生效，无需重启</span>
+    </div>
+    <p v-if="!settings" class="empty">加载中...</p>
     <div v-if="settings">
-      <section>
-        <h3>frps 连接信息（热修改：保存后立即生效，无需重启）</h3>
-        <div class="grid">
-          <label>Dashboard 地址<input class="control-input" v-model="form.frps.dashboardUrl" placeholder="http://127.0.0.1:8000" /></label>
-          <label>Dashboard 用户<input class="control-input" v-model="form.frps.dashboardUser" /></label>
-          <label>Dashboard 密码
-            <input class="control-input" v-model="form.frps.dashboardPass" type="password" autocomplete="new-password" placeholder="留空保持已保存密码" />
-            <span v-if="frps.dashboardPassSet" class="secret-note">当前已加密保存，仅显示状态，不回显原文</span>
-          </label>
-          <label>frps SSH 主机<input class="control-input" v-model="form.frps.sshHost" /></label>
-          <label>frps SSH 端口<input class="control-input" v-model.number="form.frps.sshPort" type="number" /></label>
-          <label>frps SSH 用户<input class="control-input" v-model="form.frps.sshUser" /></label>
-          <label>frps SSH 密码
-            <input class="control-input" v-model="form.frps.sshPass" type="password" autocomplete="new-password" placeholder="留空保持已保存密码" />
-            <span v-if="frps.sshPassSet" class="secret-note">当前已加密保存，仅显示状态，不回显原文</span>
-          </label>
-          <label>frps 配置文件路径<input class="control-input" v-model="form.frps.configPath" placeholder="/root/frp_0.57.0_linux_amd64/frps.ini" /></label>
-        </div>
-        <div class="token-line">
-          <template v-if="frps.tokenSet">
-            auth token 基线：<code>{{ frps.tokenMask }}</code>
-            <span class="badge warn">已设置 — 漂移检测以此为准，普通保存不会改动</span>
-          </template>
-          <template v-else>
-            auth token 基线：<span class="unset">未设置</span>
-            <span class="badge warn">请自动检测或手动设置</span>
-            <button class="control control--sm control--ghost" @click="manualTokenMode = !manualTokenMode">手动设置</button>
-          </template>
-        </div>
-        <div v-if="manualTokenMode" class="token-line">
-          <input v-model="manualToken" placeholder="输入新的 token 基线" class="control-input token-input" autocomplete="new-password" />
-          <button class="control control--sm control--success" @click="setManualToken">确认设置（将覆盖旧基线）</button>
-          <button class="control control--sm control--ghost" @click="manualTokenMode = false; manualToken = ''">取消</button>
-          <p class="warn-text">警告：基线必须与 frps/frpc 实际配置的 token 一致，设置错误会导致全部连接失败。</p>
-        </div>
-      </section>
+      <div class="card">
+        <div class="card-head"><h3>frps 连接信息</h3><span class="dim">热修改：保存后立即生效</span></div>
+        <div class="card-body">
+          <div class="field-grid">
+            <div class="field">
+              <label>Dashboard 地址</label>
+              <input class="input" v-model="form.frps.dashboardUrl" placeholder="http://127.0.0.1:8000" />
+            </div>
+            <div class="field">
+              <label>Dashboard 用户</label>
+              <input class="input" v-model="form.frps.dashboardUser" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>Dashboard 密码</label>
+              <input class="input" v-model="form.frps.dashboardPass" type="password" autocomplete="new-password" placeholder="留空保持已保存密码" />
+              <span v-if="frps.dashboardPassSet" class="secret-note">当前已加密保存，仅显示状态，不回显原文</span>
+            </div>
+            <div class="field">
+              <label>frps SSH 主机</label>
+              <input class="input" v-model="form.frps.sshHost" placeholder="如 127.0.0.1 或公网 IP" />
+            </div>
+            <div class="field">
+              <label>frps SSH 端口</label>
+              <input class="input" v-model.number="form.frps.sshPort" type="number" min="1" max="65535" />
+            </div>
+            <div class="field">
+              <label>frps SSH 用户</label>
+              <input class="input" v-model="form.frps.sshUser" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>frps SSH 密码</label>
+              <input class="input" v-model="form.frps.sshPass" type="password" autocomplete="new-password" placeholder="留空保持已保存密码" />
+              <span v-if="frps.sshPassSet" class="secret-note">当前已加密保存，仅显示状态，不回显原文</span>
+            </div>
+            <div class="field field--wide">
+              <label>frps 配置文件路径</label>
+              <input class="input mono" v-model="form.frps.configPath" placeholder="/root/frp_0.57.0_linux_amd64/frps.ini" />
+            </div>
+          </div>
 
-      <section>
-        <h3>账户策略</h3>
-          <label>注册模式
-          <select class="control-select" v-model="form.registration">
-            <option value="open">开放注册（新用户为普通用户）</option>
-            <option value="approval">需管理员审批</option>
-            <option value="closed">关闭注册（仅管理员建号）</option>
-          </select>
-        </label>
-      </section>
-
-      <section>
-        <h3>体检阈值</h3>
-        <div class="grid">
-          <label>CPU 警告 %<input class="control-input" v-model.number="form.health.cpuWarn" type="number" /></label>
-          <label>CPU 异常 %<input class="control-input" v-model.number="form.health.cpuFail" type="number" /></label>
-          <label>内存警告 %<input class="control-input" v-model.number="form.health.memWarn" type="number" /></label>
-          <label>内存异常 %<input class="control-input" v-model.number="form.health.memFail" type="number" /></label>
-          <label>磁盘警告 %<input class="control-input" v-model.number="form.health.diskWarn" type="number" /></label>
-          <label>磁盘异常 %<input class="control-input" v-model.number="form.health.diskFail" type="number" /></label>
-          <label>GPU 温度警告 °C<input class="control-input" v-model.number="form.health.gpuTempWarn" type="number" /></label>
-          <label>GPU 温度异常 °C<input class="control-input" v-model.number="form.health.gpuTempFail" type="number" /></label>
-          <label>病毒库过期天数<input class="control-input" v-model.number="form.health.clamDbMaxDays" type="number" /></label>
-          <label>快照过期分钟<input class="control-input" v-model.number="form.health.snapshotMaxAgeMin" type="number" /></label>
+          <div class="token-line">
+            <template v-if="frps.tokenSet">
+              <span class="token-label">auth token 基线</span>
+              <code>{{ frps.tokenMask }}</code>
+              <span class="badge badge--warn">已设置 — 漂移检测以此为准，普通保存不会改动</span>
+            </template>
+            <template v-else>
+              <span class="token-label">auth token 基线</span>
+              <span class="unset">未设置</span>
+              <span class="badge badge--warn">请自动检测或手动设置</span>
+              <button class="btn btn--ghost btn--sm" @click="manualTokenMode = !manualTokenMode">手动设置</button>
+            </template>
+          </div>
+          <div v-if="manualTokenMode" class="token-line manual-token">
+            <input v-model="manualToken" placeholder="输入新的 token 基线" class="input" autocomplete="new-password" />
+            <button class="btn btn--sm" @click="setManualToken">确认设置（将覆盖旧基线）</button>
+            <button class="btn btn--ghost btn--sm" @click="manualTokenMode = false; manualToken = ''">取消</button>
+            <p class="warn-text">警告：基线必须与 frps/frpc 实际配置的 token 一致，设置错误会导致全部连接失败。</p>
+          </div>
         </div>
-      </section>
-
-      <section>
-        <h3>自定义清理命令 <button class="control control--sm control--ghost" @click="addCustom">+ 添加</button></h3>
-        <p class="dim small">追加的清理项会出现在「操作中心 → 一键清理」中，与内置项同样需要管理员确认后执行。</p>
-        <div v-for="(c, i) in form.cleanupCustom" :key="i" class="custom-row">
-          <input v-model="c.name" placeholder="名称" class="control-input short" />
-          <input v-model="c.desc" placeholder="描述" class="control-input short" />
-          <input v-model="c.command" placeholder="要执行的命令" class="control-input long mono" />
-          <select v-model="c.risk" class="control-select short">
-            <option value="low">低危</option>
-            <option value="mid">中危</option>
-            <option value="high">高危</option>
-          </select>
-          <button class="control control--sm control--danger" @click="form.cleanupCustom.splice(i, 1)">删除</button>
-        </div>
-      </section>
-
-      <section>
-        <h3>AI 诊断（OpenAI 兼容协议）</h3>
-        <p class="dim small">AI 仅对体检报告做诊断分析，输出文字建议，系统不会执行其内容。</p>
-        <div class="grid">
-          <label class="chk"><input type="checkbox" v-model="form.ai.enabled" /> 启用 AI 诊断</label>
-          <label>Provider 地址<input class="control-input" v-model="form.ai.providerUrl" placeholder="https://api.deepseek.com/v1" /></label>
-          <label>模型名称<input class="control-input" v-model="form.ai.model" placeholder="deepseek-chat" /></label>
-          <label>超时（秒）<input class="control-input" v-model.number="form.ai.timeoutSec" type="number" /></label>
-          <label>API Key<input class="control-input" v-model="form.ai.apiKey" type="password" autocomplete="new-password" :placeholder="aiKeyMask || '未设置'" /><span v-if="aiKeyMask" class="secret-note">已加密保存，留空保持不变</span></label>
-        </div>
-      </section>
-
-      <div class="actions">
-        <button class="control" @click="save">保存设置</button>
-        <button class="control control--ghost" @click="detectFrps">一键自动检测 frps 配置</button>
-        <button class="control control--ghost" @click="testFrps">测试 frps 连接</button>
-        <button class="control control--ghost" @click="verifyToken">校验 token 基线</button>
       </div>
-      <p v-if="msg" :class="msgOk ? 'ok' : 'error'">{{ msg }}</p>
+
+      <div class="card">
+        <div class="card-head"><h3>账户策略</h3></div>
+        <div class="card-body">
+          <div class="field" style="max-width: 360px">
+            <label>注册模式</label>
+            <select class="select" v-model="form.registration">
+              <option value="open">开放注册（新用户为普通用户）</option>
+              <option value="approval">需管理员审批</option>
+              <option value="closed">关闭注册（仅管理员建号）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>体检阈值</h3></div>
+        <div class="card-body">
+          <div class="field-grid">
+            <div class="field"><label>CPU 警告 %</label><input class="input" v-model.number="form.health.cpuWarn" type="number" min="0" max="100" /></div>
+            <div class="field"><label>CPU 异常 %</label><input class="input" v-model.number="form.health.cpuFail" type="number" min="0" max="100" /></div>
+            <div class="field"><label>内存警告 %</label><input class="input" v-model.number="form.health.memWarn" type="number" min="0" max="100" /></div>
+            <div class="field"><label>内存异常 %</label><input class="input" v-model.number="form.health.memFail" type="number" min="0" max="100" /></div>
+            <div class="field"><label>磁盘警告 %</label><input class="input" v-model.number="form.health.diskWarn" type="number" min="0" max="100" /></div>
+            <div class="field"><label>磁盘异常 %</label><input class="input" v-model.number="form.health.diskFail" type="number" min="0" max="100" /></div>
+            <div class="field"><label>GPU 温度警告 °C</label><input class="input" v-model.number="form.health.gpuTempWarn" type="number" min="0" /></div>
+            <div class="field"><label>GPU 温度异常 °C</label><input class="input" v-model.number="form.health.gpuTempFail" type="number" min="0" /></div>
+            <div class="field"><label>病毒库过期天数</label><input class="input" v-model.number="form.health.clamDbMaxDays" type="number" min="1" /></div>
+            <div class="field"><label>快照过期分钟</label><input class="input" v-model.number="form.health.snapshotMaxAgeMin" type="number" min="1" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>自定义清理命令</h3>
+          <span class="grow" />
+          <button class="btn btn--ghost btn--sm" @click="addCustom">+ 添加</button>
+        </div>
+        <div class="card-body">
+          <p class="hint">追加的清理项会出现在「操作中心 → 一键清理」中，与内置项同样需要管理员确认后执行。</p>
+          <div v-for="(c, i) in form.cleanupCustom" :key="i" class="custom-row">
+            <div class="field"><label>名称</label><input class="input" v-model="c.name" placeholder="如 清理测试日志" /></div>
+            <div class="field"><label>描述</label><input class="input" v-model="c.desc" placeholder="简要说明" /></div>
+            <div class="field"><label>命令</label><input class="input mono" v-model="c.command" placeholder="要执行的命令" /></div>
+            <div class="field" style="max-width: 130px"><label>风险</label>
+              <select class="select" v-model="c.risk">
+                <option value="low">低危</option>
+                <option value="mid">中危</option>
+                <option value="high">高危</option>
+              </select>
+            </div>
+            <div class="field custom-del"><label>&nbsp;</label>
+              <button class="btn btn--ghost btn--danger btn--sm" @click="form.cleanupCustom.splice(i, 1)">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>AI 诊断（OpenAI 兼容协议）</h3></div>
+        <div class="card-body">
+          <p class="hint">AI 仅对体检报告做诊断分析，输出文字建议，系统不会执行其内容。</p>
+          <div class="field-grid">
+            <div class="field field--inline" style="grid-column: 1 / -1">
+              <input type="checkbox" v-model="form.ai.enabled" style="accent-color: var(--accent-strong); width: 16px; height: 16px" />
+              <label style="margin: 0; color: var(--fg)">启用 AI 诊断</label>
+            </div>
+            <div class="field"><label>Provider 地址</label><input class="input" v-model="form.ai.providerUrl" placeholder="https://api.deepseek.com/v1" /></div>
+            <div class="field"><label>模型名称</label><input class="input" v-model="form.ai.model" placeholder="deepseek-chat" /></div>
+            <div class="field"><label>超时（秒）</label><input class="input" v-model.number="form.ai.timeoutSec" type="number" min="5" /></div>
+            <div class="field">
+              <label>API Key</label>
+              <input class="input" v-model="form.ai.apiKey" type="password" autocomplete="new-password" :placeholder="aiKeyMask || '未设置'" />
+              <span v-if="aiKeyMask" class="secret-note">已加密保存，留空保持不变</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn" @click="save">保存设置</button>
+        <button class="btn btn--ghost" @click="detectFrps">一键自动检测 frps 配置</button>
+        <button class="btn btn--ghost" @click="testFrps">测试 frps 连接</button>
+        <button class="btn btn--ghost" @click="verifyToken">校验 token 基线</button>
+      </div>
+      <p v-if="msg" :class="msgOk ? 'msg msg--ok' : 'msg msg--err'">{{ msg }}</p>
     </div>
   </div>
 </template>
@@ -219,42 +271,17 @@ async function reload() {
 </script>
 
 <style scoped>
-section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
-h3 { margin: 0 0 14px; color: #e2e8f0; font-size: 15px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-@media (max-width: 768px) {
-  .grid { grid-template-columns: 1fr; }
-  .custom-row { flex-direction: column; align-items: stretch; }
-  .custom-row input, .custom-row select { width: 100% !important; }
-  .token-input { width: 100%; }
-  .actions { flex-wrap: wrap; }
+.token-line { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: var(--sp-4); font-size: 13px; color: var(--muted); }
+.token-label { font-weight: 550; }
+.manual-token { flex-direction: column; align-items: stretch; max-width: 520px; }
+.manual-token .btn { align-self: flex-start; }
+.warn-text { color: var(--warn); font-size: 12.5px; margin: 6px 0 0; }
+.unset { color: var(--danger); }
+.custom-row { display: grid; grid-template-columns: 1.2fr 1.5fr 2.5fr 110px 76px; gap: 12px; align-items: end; margin-bottom: var(--sp-3); }
+.custom-del .btn { width: 100%; }
+@media (max-width: 900px) {
+  .custom-row { grid-template-columns: 1fr 1fr; }
+  .custom-row .field:nth-child(3) { grid-column: 1 / -1; }
 }
-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #94a3b8; }
-input, select {
-  background: #0f172a; border: 1px solid #334155; border-radius: 6px;
-  padding: 9px 10px; color: #e2e8f0; font-size: 14px;
-}
-.token-line { margin-top: 14px; font-size: 13px; color: #94a3b8; }
-.custom-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
-.custom-row input, .custom-row select { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; color: #e2e8f0; font-size: 13px; }
-.short { width: 130px; }
-.long { flex: 1; }
-.mono { font-family: ui-monospace, monospace; }
-.chk { flex-direction: row !important; align-items: center; }
-button.small { padding: 5px 10px; font-size: 12px; border-radius: 5px; }
-button.danger { background: #ef4444; }
-code { background: #0f172a; padding: 2px 8px; border-radius: 4px; color: #4ade80; }
-.badge.warn { background: #78350f; color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 6px; }
-.unset { color: #f87171; }
-button.small { padding: 4px 10px; font-size: 12px; margin-left: 8px; border-radius: 5px; border: none; cursor: pointer; }
-.ok { background: #0ea5e9; color: #fff; }
-.ghost { background: #334155; color: #cbd5e1; }
-.token-input { width: 240px; margin-right: 8px; }
-.warn-text { color: #fbbf24; font-size: 12px; }
-.actions { display: flex; gap: 10px; }
-button { background: #0ea5e9; color: #fff; border: none; border-radius: 6px; padding: 9px 18px; cursor: pointer; font-size: 14px; }
-button.ghost { background: #334155; color: #cbd5e1; }
-.ok { color: #4ade80; }
-.error { color: #f87171; }
-.loading { color: #64748b; }
+@media (max-width: 560px) { .custom-row { grid-template-columns: 1fr; } }
 </style>
