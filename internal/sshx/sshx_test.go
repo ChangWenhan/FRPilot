@@ -83,3 +83,17 @@ func TestVerifyTokenInFrpsIniTomlFormat(t *testing.T) {
 		t.Fatal("提取错误")
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	cases := map[string]string{
+		"simple":   "'simple'",
+		"a'b":      `'a'\''b'`,
+		`pa$$ w0rd`: `'pa$$ w0rd'`,
+		"":         "''",
+	}
+	for in, want := range cases {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+}

@@ -56,28 +56,33 @@ func (s *Service) Discover(client *frpsapi.Client) (*DiscoveryResult, error) {
 	return res, nil
 }
 
-// UpdateCredentials 填写某机器的 SSH 凭据并落库（加密存储）。
+// UpdateCredentials 填写某机器的 SSH 凭据与 sudo 密码并落库（加密存储）。
 // 凭据就绪后状态 pending → configured，监控开关需单独开启。
-func (s *Service) UpdateCredentials(id int64, sshUser, sshPass string) error {
+func (s *Service) UpdateCredentials(id int64, sshUser, sshPass, sudoPass string) error {
 	if strings.TrimSpace(sshUser) == "" {
 		return errors.New("SSH 用户不能为空")
 	}
-	if sshPass == "" {
-		// UI 不再回显旧密码；编辑用户名时留空表示保留原来的密文。
-		m, err := s.db.GetMachineByID(id)
-		if err != nil {
-			return err
-		}
-		if m.SSHPassEnc == "" {
-			return errors.New("SSH 密码不能为空")
-		}
-		return s.db.SetMachineCredentials(id, strings.TrimSpace(sshUser), m.SSHPassEnc)
-	}
-	enc, err := s.db.EncryptSecret(sshPass)
+	m, err := s.db.GetMachineByID(id)
 	if err != nil {
 		return err
 	}
-	return s.db.SetMachineCredentials(id, strings.TrimSpace(sshUser), enc)
+	sshEnc := m.SSHPassEnc
+	if sshPass != "" {
+		sshEnc, err = s.db.EncryptSecret(sshPass)
+		if err != nil {
+			return err
+		}
+	} else if sshEnc == "" {
+		return errors.New("SSH 密码不能为空")
+	}
+	sudoEnc := m.SudoPassEnc
+	if sudoPass != "" {
+		sudoEnc, err = s.db.EncryptSecret(sudoPass)
+		if err != nil {
+			return err
+		}
+	}
+	return s.db.SetMachineCredentials(id, strings.TrimSpace(sshUser), sshEnc, sudoEnc)
 }
 
 // SetEnabled 开/关监控。开启要求凭据已配置（store 层校验）。

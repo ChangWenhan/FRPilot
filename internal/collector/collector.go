@@ -163,6 +163,14 @@ func (c *Collector) collect(m *store.Machine, slow bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// sudo 密码：仅当 SSH 用户非 root 且配置了 sudo 密码时提升权限执行。
+	sudoPass := ""
+	if m.SSHUser != "root" && m.SudoPassEnc != "" {
+		sudoPass, err = c.db.DecryptSecret(m.SudoPassEnc)
+		if err != nil {
+			return false, err
+		}
+	}
 	conn, err := sshx.Dial(host, port, m.SSHUser, pass)
 	if err != nil {
 		c.db.TouchMachine(m.ID, true, false)
@@ -171,7 +179,7 @@ func (c *Collector) collect(m *store.Machine, slow bool) (bool, error) {
 	defer conn.Close()
 
 	// 快速指标
-	fastOut, _, err := conn.Run(fastScript(), SSHTimeout)
+	fastOut, _, err := conn.RunSudo(fastScript(), sudoPass, SSHTimeout)
 	if err != nil {
 		c.db.TouchMachine(m.ID, true, false)
 		return false, fmt.Errorf("采集快速指标失败: %w", err)
@@ -186,10 +194,10 @@ func (c *Collector) collect(m *store.Machine, slow bool) (bool, error) {
 	var cron []*CronEntry
 	var ports []*PortEntry
 	if slow {
-		gpu = c.tryGPU(conn)
-		security = c.trySecurity(conn)
-		cron = c.tryCron(conn)
-		ports = c.tryPorts(conn)
+		gpu = c.tryGPU(conn, sudoPass)
+		security = c.trySecurity(conn, sudoPass)
+		cron = c.tryCron(conn, sudoPass)
+		ports = c.tryPorts(conn, sudoPass)
 	} else if snap, err := c.db.GetSnapshot(m.ID); err == nil {
 		// 保留上一轮慢速数据
 		var prev struct {
@@ -298,12 +306,12 @@ func (c *Collector) tunnelCheck(host string, port int) bool {
 
 // ---- 慢速模块：各自容错 ----
 
-func (c *Collector) tryGPU(conn *sshx.Conn) *GPUInfo {
-	out, _, _ := conn.Run(`nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null || echo NO_GPU`, SSHTimeout)
+func (c *Collector) tryGPU(conn *sshx.Conn, sudoPass string) *GPUInfo {
+	out, _, _ := conn.RunSudo(`nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null || echo NO_GPU`, sudoPass, SSHTimeout)
 	return ParseGPU(out)
 }
 
-func (c *Collector) trySecurity(conn *sshx.Conn) []*SecurityItem {
+func (c *Collector) trySecurity(conn *sshx.Conn, sudoPass string) []*SecurityItem {
 	script := `
 for svc in clamav-daemon clamav-freshclam crowdsec fail2ban ufw; do
   if systemctl list-unit-files --type=service "$svc.service" 2>/dev/null | grep -q "$svc"; then
@@ -335,11 +343,11 @@ f2b=$(fail2ban-client status 2>/dev/null | grep -oP 'banned IP count:\s*\K\d+' |
 csc=$(cscli decisions list 2>/dev/null | tail -n +3 | wc -l); [ -n "$csc" ] && echo "COUNT crowdsec $csc"
 ufw=$(ufw status 2>/dev/null | head -1); [ -n "$ufw" ] && echo "EXTRA ufw $ufw"
 `
-	out, _, _ := conn.Run(script, SSHTimeout)
+	out, _, _ := conn.RunSudo(script, sudoPass, SSHTimeout)
 	return ParseSecurity(out)
 }
 
-func (c *Collector) tryCron(conn *sshx.Conn) []*CronEntry {
+func (c *Collector) tryCron(conn *sshx.Conn, sudoPass string) []*CronEntry {
 	script := `
 echo "SOURCE >root"
 crontab -l 2>/dev/null | while IFS= read -r l; do [ -n "$l" ] && echo "CRON root $l"; done
@@ -358,12 +366,12 @@ for u in $(awk -F: '$7 ~ /(bash|sh|zsh)$/ {print $1}' /etc/passwd); do
 done
 systemctl list-timers --all --no-pager 2>/dev/null | awk 'NR>1 && NF>=5 {print "TIMER "$NF" ("$1" "$2")"}'
 `
-	out, _, _ := conn.Run(script, SSHTimeout)
+	out, _, _ := conn.RunSudo(script, sudoPass, SSHTimeout)
 	return ParseCron(out)
 }
 
-func (c *Collector) tryPorts(conn *sshx.Conn) []*PortEntry {
-	out, _, _ := conn.Run(`ss -tlnp 2>/dev/null`, SSHTimeout)
+func (c *Collector) tryPorts(conn *sshx.Conn, sudoPass string) []*PortEntry {
+	out, _, _ := conn.RunSudo(`ss -tlnp 2>/dev/null`, sudoPass, SSHTimeout)
 	return ParsePorts(out)
 }
 

@@ -24,6 +24,7 @@ type Machine struct {
 	Name          string     `json:"name"`
 	TunnelPort    int        `json:"tunnelPort"`
 	SSHUser       string     `json:"sshUser"`
+	SudoPassEnc   string     `json:"-"`
 	SSHPassEnc    string     `json:"-"`
 	Status        string     `json:"status"`
 	Enabled       bool       `json:"enabled"`
@@ -38,7 +39,7 @@ func scanMachine(r *sql.Row) (*Machine, error) {
 	m := &Machine{}
 	var enabled int
 	var lastSeen, lastSuccess sql.NullTime
-	err := r.Scan(&m.ID, &m.Name, &m.TunnelPort, &m.SSHUser, &m.SSHPassEnc, &m.Status,
+	err := r.Scan(&m.ID, &m.Name, &m.TunnelPort, &m.SSHUser, &m.SSHPassEnc, &m.SudoPassEnc, &m.Status,
 		&enabled, &m.Notes, &m.CreatedAt, &m.UpdatedAt, &lastSeen, &lastSuccess)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -82,19 +83,19 @@ func (db *DB) UpsertMachineFromDiscovery(name string, tunnelPort int) (*Machine,
 
 func (db *DB) GetMachineByID(id int64) (*Machine, error) {
 	return scanMachine(db.sql.QueryRow(
-		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
+		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, sudo_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
 		 FROM machines WHERE id=?`, id))
 }
 
 func (db *DB) GetMachineByName(name string) (*Machine, error) {
 	return scanMachine(db.sql.QueryRow(
-		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
+		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, sudo_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
 		 FROM machines WHERE name=?`, name))
 }
 
 func (db *DB) ListMachines() ([]*Machine, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
+		`SELECT id, name, tunnel_port, ssh_user, ssh_pass_enc, sudo_pass_enc, status, enabled, notes, created_at, updated_at, last_seen_at, last_success_at
 		 FROM machines ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ func (db *DB) ListMachines() ([]*Machine, error) {
 		m := &Machine{}
 		var enabled int
 		var lastSeen, lastSuccess sql.NullTime
-		if err := rows.Scan(&m.ID, &m.Name, &m.TunnelPort, &m.SSHUser, &m.SSHPassEnc, &m.Status,
+		if err := rows.Scan(&m.ID, &m.Name, &m.TunnelPort, &m.SSHUser, &m.SSHPassEnc, &m.SudoPassEnc, &m.Status,
 			&enabled, &m.Notes, &m.CreatedAt, &m.UpdatedAt, &lastSeen, &lastSuccess); err != nil {
 			return nil, err
 		}
@@ -121,12 +122,12 @@ func (db *DB) ListMachines() ([]*Machine, error) {
 	return out, rows.Err()
 }
 
-// SetMachineCredentials 填写 SSH 凭据；status 从 pending → configured。
-// 凭据由调用方先加密为 SSHPassEnc。
-func (db *DB) SetMachineCredentials(id int64, sshUser, sshPassEnc string) error {
+// SetMachineCredentials 填写 SSH 凭据与 sudo 密码；status 从 pending → configured。
+// 凭据由调用方先加密为 SSHPassEnc / SudoPassEnc。
+func (db *DB) SetMachineCredentials(id int64, sshUser, sshPassEnc, sudoPassEnc string) error {
 	res, err := db.sql.Exec(
-		`UPDATE machines SET ssh_user=?, ssh_pass_enc=?, status=?, updated_at=? WHERE id=?`,
-		sshUser, sshPassEnc, MachineConfigured, time.Now(), id)
+		`UPDATE machines SET ssh_user=?, ssh_pass_enc=?, sudo_pass_enc=?, status=?, updated_at=? WHERE id=?`,
+		sshUser, sshPassEnc, sudoPassEnc, MachineConfigured, time.Now(), id)
 	if err != nil {
 		return err
 	}

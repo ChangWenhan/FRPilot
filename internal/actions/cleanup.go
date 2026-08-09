@@ -190,6 +190,13 @@ func (tm *TaskManager) runOnMachine(m *store.Machine, items []CleanupItem) ([]*T
 	if err != nil {
 		return nil, err
 	}
+	sudoPass := ""
+	if m.SSHUser != "root" && m.SudoPassEnc != "" {
+		sudoPass, err = tm.db.DecryptSecret(m.SudoPassEnc)
+		if err != nil {
+			return nil, err
+		}
+	}
 	host := tm.cfg.Get().Frps.SSHHost
 	if host == "" {
 		host = "127.0.0.1"
@@ -204,10 +211,21 @@ func (tm *TaskManager) runOnMachine(m *store.Machine, items []CleanupItem) ([]*T
 	for _, it := range items {
 		res := &TaskResult{MachineID: m.ID, Machine: m.Name, ItemID: it.ID, ItemName: it.Name}
 		start := time.Now()
-		// 非 root 用户执行需要 root 的项 → 跳过并标注（不视为错误）
+		// 非 root 用户执行需要 root 的项：配置了 sudo 密码则提升执行，否则跳过（不视为错误）
 		if it.RequiresRoot && m.SSHUser != "root" {
-			res.Status = "skipped"
-			res.Output = "需要 root 权限，当前 SSH 用户: " + m.SSHUser
+			if sudoPass == "" {
+				res.Status = "skipped"
+				res.Output = "需要 root 权限，当前 SSH 用户: " + m.SSHUser + "（未配置 sudo 密码）"
+			} else {
+				out, errOut, err := conn.RunSudo(it.Command, sudoPass, time.Duration(it.Timeout)*time.Second)
+				if err != nil {
+					res.Status = "failed"
+					res.Output = truncate(out+"\n"+errOut+"\n"+err.Error(), 2000)
+				} else {
+					res.Status = "ok"
+					res.Output = truncate(out, 2000)
+				}
+			}
 		} else {
 			out, errOut, err := conn.Run(it.Command, time.Duration(it.Timeout)*time.Second)
 			if err != nil {
@@ -256,6 +274,13 @@ func (tm *TaskManager) Preview(machineID int64, itemIDs []string) ([]*TaskResult
 	if err != nil {
 		return nil, err
 	}
+	sudoPass := ""
+	if m.SSHUser != "root" && m.SudoPassEnc != "" {
+		sudoPass, err = tm.db.DecryptSecret(m.SudoPassEnc)
+		if err != nil {
+			return nil, err
+		}
+	}
 	host := tm.cfg.Get().Frps.SSHHost
 	if host == "" {
 		host = "127.0.0.1"
@@ -287,7 +312,26 @@ func (tm *TaskManager) Preview(machineID int64, itemIDs []string) ([]*TaskResult
 			results = append(results, res)
 			continue
 		}
-		out, _, err := conn.Run(it.PreviewCmd, 30*time.Second)
+		previewCmd := it.PreviewCmd
+		if it.RequiresRoot && m.SSHUser != "root" {
+			if sudoPass == "" {
+				res.Status = "skipped"
+				res.Output = "需要 root 权限，当前 SSH 用户: " + m.SSHUser + "（未配置 sudo 密码）"
+				results = append(results, res)
+				continue
+			}
+			out, _, err := conn.RunSudo(previewCmd, sudoPass, 30*time.Second)
+			if err != nil {
+				res.Status = "failed"
+				res.Output = truncate(out+"\n"+err.Error(), 2000)
+			} else {
+				res.Status = "ok"
+				res.Output = truncate(out, 2000)
+			}
+			results = append(results, res)
+			continue
+		}
+		out, _, err := conn.Run(previewCmd, 30*time.Second)
 		if err != nil {
 			res.Status = "failed"
 			res.Output = truncate(err.Error(), 500)

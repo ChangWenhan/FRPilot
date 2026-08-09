@@ -105,6 +105,7 @@ func (db *DB) migrate() error {
 			tunnel_port INTEGER NOT NULL DEFAULT 0,
 			ssh_user TEXT NOT NULL DEFAULT '',
 			ssh_pass_enc TEXT NOT NULL DEFAULT '',
+			sudo_pass_enc TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'pending',
 			enabled INTEGER NOT NULL DEFAULT 0,
 			notes TEXT NOT NULL DEFAULT '',
@@ -184,7 +185,35 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	// 增量迁移：老库的 machines 表补 sudo_pass_enc 列。
+	if err := db.ensureColumn("machines", "sudo_pass_enc", `ALTER TABLE machines ADD COLUMN sudo_pass_enc TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (db *DB) ensureColumn(table, column, alterSQL string) error {
+	rows, err := db.sql.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.sql.Exec(alterSQL)
+	return err
 }
 
 func (db *DB) Close() error { return db.sql.Close() }

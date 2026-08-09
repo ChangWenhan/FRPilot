@@ -17,13 +17,16 @@
           <td><span class="badge" :class="m.status">{{ statusText[m.status] }}</span></td>
           <td>
             <template v-if="editId === m.id">
-              <input v-model="credUser" placeholder="SSH 用户" class="control-input control-input--inline inline" />
-              <input v-model="credPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" class="control-input control-input--inline inline" />
-              <button class="control control--sm control--success" @click="saveCreds(m)">保存</button>
-              <button class="control control--sm control--ghost" @click="editId = null">取消</button>
+              <div class="cred-edit">
+                <input v-model="credUser" placeholder="SSH 用户" class="control-input control-input--inline inline" />
+                <input v-model="credPass" type="password" placeholder="留空保持旧密码" autocomplete="new-password" class="control-input control-input--inline inline" />
+                <input v-model="sudoPass" type="password" placeholder="sudo 密码(留空不变)" title="执行需要 root 的命令时使用（采集/清理自动走 sudo）" autocomplete="new-password" class="control-input control-input--inline inline" />
+                <button class="control control--sm control--success" @click="saveCreds(m)">保存</button>
+                <button class="control control--sm control--ghost" @click="editId = null">取消</button>
+              </div>
             </template>
             <template v-else>
-              <span>{{ m.hasCredentials ? `已配置 (${m.sshUser})` : '未配置' }}</span>
+              <span>{{ m.hasCredentials ? `已配置 (${m.sshUser}${m.hasSudo ? '+sudo' : ''})` : '未配置' }}</span>
                 <button v-if="isAdmin" class="control control--sm control--ghost" @click="startEdit(m)">编辑</button>
             </template>
           </td>
@@ -54,6 +57,7 @@ const machines = ref([])
 const editId = ref(null)
 const credUser = ref('')
 const credPass = ref('')
+const sudoPass = ref('')
 const isAdmin = ref(false)
 const discoverMsg = ref('')
 
@@ -80,10 +84,11 @@ function startEdit(m) {
   editId.value = m.id
   credUser.value = m.sshUser || ''
   credPass.value = ''
+  sudoPass.value = ''
 }
 
 async function saveCreds(m) {
-  await post(`/api/machines/${m.id}/credentials`, { sshUser: credUser.value, sshPass: credPass.value })
+  await post(`/api/machines/${m.id}/credentials`, { sshUser: credUser.value, sshPass: credPass.value, sudoPass: sudoPass.value })
   editId.value = null
   await load()
 }
@@ -104,6 +109,8 @@ table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 th, td { text-align: left; padding: 10px; border-bottom: 1px solid #1e293b; font-size: 14px; }
 th { color: #64748b; font-weight: 500; }
 .inline { width: 110px; margin-right: 6px; background: #0f172a; border: 1px solid #334155; border-radius: 5px; padding: 6px 8px; color: #e2e8f0; }
+.cred-edit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cred-edit .inline { width: 120px; margin-right: 0; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #334155; color: #94a3b8; }
 .badge.enabled { background: #14532d; color: #4ade80; }
 .badge.pending { background: #78350f; color: #fbbf24; }

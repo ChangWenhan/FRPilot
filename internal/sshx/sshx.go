@@ -55,6 +55,21 @@ func (c *Conn) Run(cmd string, timeout time.Duration) (string, string, error) {
 	return out.String(), errOut.String(), nil
 }
 
+// RunSudo 以 sudo 提升权限执行命令（非交互，密码经 stdin 传给 sudo -S）。
+// sudoPass 为空时退化为普通 Run；密码不回显、不落日志。
+func (c *Conn) RunSudo(cmd, sudoPass string, timeout time.Duration) (string, string, error) {
+	if sudoPass == "" {
+		return c.Run(cmd, timeout)
+	}
+	wrapped := fmt.Sprintf("echo %s | sudo -S -p '' -- bash -c %s", shellQuote(sudoPass), shellQuote(cmd))
+	return c.Run(wrapped, timeout)
+}
+
+// shellQuote 单引号包裹并转义内嵌单引号，可安全嵌入 bash 命令行。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 func (c *Conn) Close() error { return c.client.Close() }
 
 // FindFrpsConfigPath 通过 SSH 定位 frps 的实际配置文件路径：

@@ -52,7 +52,7 @@ func TestCredentialsFlow(t *testing.T) {
 		t.Fatal("未配置凭据时应拒绝启用")
 	}
 	// 填凭据 → configured
-	if err := svc.UpdateCredentials(m.ID, "root", "pass123"); err != nil {
+	if err := svc.UpdateCredentials(m.ID, "root", "pass123", ""); err != nil {
 		t.Fatal(err)
 	}
 	m2, _ := db.GetMachineByID(m.ID)
@@ -91,10 +91,10 @@ func TestCredentialsValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.UpdateCredentials(m.ID, "", "x"); err == nil {
+	if err := svc.UpdateCredentials(m.ID, "", "x", ""); err == nil {
 		t.Fatal("空用户名应被拒绝")
 	}
-	if err := svc.UpdateCredentials(m.ID, "root", ""); err == nil {
+	if err := svc.UpdateCredentials(m.ID, "root", "", ""); err == nil {
 		t.Fatal("空密码应被拒绝")
 	}
 }
@@ -105,7 +105,7 @@ func TestCredentialDecrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.UpdateCredentials(m.ID, "root", "s3cret!"); err != nil {
+	if err := svc.UpdateCredentials(m.ID, "root", "s3cret!", ""); err != nil {
 		t.Fatal(err)
 	}
 	m2, _ := db.GetMachineByID(m.ID)
@@ -115,5 +115,33 @@ func TestCredentialDecrypt(t *testing.T) {
 	}
 	if got != "s3cret!" {
 		t.Fatal("凭据加解密不一致")
+	}
+}
+
+func TestUpdateCredentialsSudo(t *testing.T) {
+	svc, db, _ := newTestSvc(t)
+	m, _, err := db.UpsertMachineFromDiscovery("ssh_sudo_m1", 6010)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateCredentials(m.ID, "alice", "sshpass", "sudopass"); err != nil {
+		t.Fatal(err)
+	}
+	m2, _ := db.GetMachineByID(m.ID)
+	if m2.SudoPassEnc == "" || m2.SudoPassEnc == "sudopass" {
+		t.Fatalf("sudo 密码应加密存储, got %q", m2.SudoPassEnc)
+	}
+	// 留空 sudo 密码应保留旧值
+	if err := svc.UpdateCredentials(m.ID, "alice", "newpass", ""); err != nil {
+		t.Fatal(err)
+	}
+	m3, _ := db.GetMachineByID(m.ID)
+	if m3.SudoPassEnc != m2.SudoPassEnc {
+		t.Fatal("sudo 密码留空时应保留原密文")
+	}
+	// 解密回读一致
+	dec, err := db.DecryptSecret(m3.SudoPassEnc)
+	if err != nil || dec != "sudopass" {
+		t.Fatalf("sudo 密码解密失败: %v %q", err, dec)
 	}
 }

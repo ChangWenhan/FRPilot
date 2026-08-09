@@ -99,7 +99,7 @@ func usage() {
   frpm login [--server URL] [--user NAME]     登录并保存会话令牌
   frpm status                                  总览：机器/隧道/frps 状态
   frpm machines list                           列出全部机器与状态
-  frpm machines set-credentials <id|name> --user <ssh用户> --pass <密码>
+  frpm machines set-credentials <id|name> --user <ssh用户> --pass <密码> [--sudo-pass <sudo密码>]
   frpm machines enable <id|name>               启用监控
   frpm machines disable <id|name>              停用监控
   frpm show <id|name>                          机器最新快照（CPU/内存/磁盘/GPU）
@@ -230,21 +230,28 @@ func cmdMachines(c *Client, rest []string, jsonOut bool) error {
 			printJSON(ms)
 			return nil
 		}
-		fmt.Printf("%-4s %-22s %-10s %-8s %-12s\n", "ID", "名称", "隧道端口", "状态", "凭据")
+		fmt.Printf("%-4s %-22s %-10s %-8s %-18s\n", "ID", "名称", "隧道端口", "状态", "凭据")
 		for _, m := range ms {
-			fmt.Printf("%-4v %-22s %-10v %-8s %-12v\n",
-				m["id"], m["name"], m["tunnelPort"], m["status"], m["hasCredentials"])
+			cred := "未配置"
+			if m["hasCredentials"] == true {
+				cred = "已配置"
+				if m["hasSudo"] == true {
+					cred += "+sudo"
+				}
+			}
+			fmt.Printf("%-4v %-22s %-10v %-8s %-18v\n",
+				m["id"], m["name"], m["tunnelPort"], m["status"], cred)
 		}
 		return nil
 	case "set-credentials":
 		if len(rest) < 1 {
-			return fmt.Errorf("用法: frpm machines set-credentials <id|name> --user <用户> --pass <密码>")
+			return fmt.Errorf("用法: frpm machines set-credentials <id|name> --user <用户> --pass <密码> [--sudo-pass <sudo密码>]")
 		}
 		target, err := resolveID(c, rest[0])
 		if err != nil {
 			return err
 		}
-		user, pass := "", ""
+		user, pass, sudoPass := "", "", ""
 		for i := 0; i < len(rest); i++ {
 			switch rest[i] {
 			case "--user":
@@ -257,12 +264,17 @@ func cmdMachines(c *Client, rest []string, jsonOut bool) error {
 					pass = rest[i+1]
 					i++
 				}
+			case "--sudo-pass":
+				if i+1 < len(rest) {
+					sudoPass = rest[i+1]
+					i++
+				}
 			}
 		}
 		if user == "" || pass == "" {
 			return fmt.Errorf("需要 --user 和 --pass")
 		}
-		if err := c.SetCredentials(target, user, pass); err != nil {
+		if err := c.SetCredentials(target, user, pass, sudoPass); err != nil {
 			return err
 		}
 		fmt.Println("凭据已保存，可执行 enable 启用监控")

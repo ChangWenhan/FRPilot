@@ -165,9 +165,9 @@ func (c *Client) VerifyToken() (map[string]any, error) {
 	return out, nil
 }
 
-func (c *Client) SetCredentials(id string, sshUser, sshPass string) error {
+func (c *Client) SetCredentials(id string, sshUser, sshPass, sudoPass string) error {
 	return c.do(http.MethodPost, "/api/machines/"+id+"/credentials",
-		map[string]string{"sshUser": sshUser, "sshPass": sshPass}, nil)
+		map[string]string{"sshUser": sshUser, "sshPass": sshPass, "sudoPass": sudoPass}, nil)
 }
 
 func (c *Client) SetEnabled(id string, enabled bool) error {

@@ -39,7 +39,7 @@ func TestMachineStatusLifecycle(t *testing.T) {
 	if m.Status != MachinePending {
 		t.Fatalf("初始状态应为 pending, got %s", m.Status)
 	}
-	if err := db.SetMachineCredentials(m.ID, "root", "enc"); err != nil {
+	if err := db.SetMachineCredentials(m.ID, "root", "enc", ""); err != nil {
 		t.Fatal(err)
 	}
 	if m2, _ := db.GetMachineByID(m.ID); m2.Status != MachineConfigured {

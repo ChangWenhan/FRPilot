@@ -23,10 +23,14 @@ func (s *Server) handleMachines(w http.ResponseWriter, r *http.Request) {
 	type vm struct {
 		*store.Machine
 		HasCredentials bool `json:"hasCredentials"`
+		HasSudo        bool `json:"hasSudo"`
 	}
 	out := make([]vm, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, vm{Machine: m, HasCredentials: m.SSHUser != "" && m.SSHPassEnc != ""})
+		out = append(out, vm{Machine: m,
+			HasCredentials: m.SSHUser != "" && m.SSHPassEnc != "",
+			HasSudo:        m.SudoPassEnc != "",
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"machines": out})
 }
@@ -52,8 +56,9 @@ func formatDiscover(r *registry.DiscoveryResult) string {
 }
 
 type credReq struct {
-	SSHUser string `json:"sshUser"`
-	SSHPass string `json:"sshPass"`
+	SSHUser  string `json:"sshUser"`
+	SSHPass  string `json:"sshPass"`
+	SudoPass string `json:"sudoPass"`
 }
 
 func (s *Server) handleMachineCredentials(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +67,7 @@ func (s *Server) handleMachineCredentials(w http.ResponseWriter, r *http.Request
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if err := s.registry.UpdateCredentials(id, req.SSHUser, req.SSHPass); err != nil {
+	if err := s.registry.UpdateCredentials(id, req.SSHUser, req.SSHPass, req.SudoPass); err != nil {
 		errJSON(w, http.StatusBadRequest, err)
 		return
 	}
