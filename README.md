@@ -17,8 +17,7 @@
 - **Scheduled tasks** — user crontabs, `/etc/crontab`, `/etc/cron.d/*`, cron.hourly/daily/weekly/monthly scripts and systemd timers in one view
 - **Traffic & bandwidth direction** — cumulative traffic, live rates and share percentages per frpc; highlights which machine is consuming the bandwidth and flags rate spikes as anomalies
 - **One-click cleanup** — 5 built-in safe command sets (page cache / APT cache / journal vacuum / user caches / temp files) with risk levels, dry-run preview, custom command extension and human confirmation before execution; root-required items auto-elevate when a sudo password is configured
-- **Virus scan** — runs the security tools already installed on each machine: ClamAV quick (common dirs) / full (/) scans plus rkhunter/chkrootkit rootkit checks; asynchronous background tasks with real-time per-directory progress
-- **One-click health check** — threshold-based assessment over the latest snapshot (CPU/memory/disk/GPU temp & VRAM/security/tunnel reachability), scored report (fail −10, warn −3; ≥90 pass, ≥70 warn, else fail) with history stored
+- **Security suite (health check + virus scan, one entry)** — threshold-based health assessment over the latest snapshot (CPU/memory/disk/GPU temp & VRAM/security/tunnel reachability) with scored reports (fail −10, warn −3; ≥90 pass, ≥70 warn, else fail) and stored history; virus scan runs the tools installed on each machine: ClamAV quick (common dirs) / full (/) / **signature update (freshclam)** plus rkhunter/chkrootkit rootkit checks; asynchronous background tasks with real-time per-directory progress
 - **AI diagnosis** (OpenAI-compatible API) — explains every warn/fail item and suggests remediation steps in plain text; **diagnosis only, never executes** — the system prompt forbids commands and server-side heuristics flag any command-like content as "for reference only"
 - **User system** — mandatory login; the first registered user becomes admin; configurable registration (open / approval / closed); two roles (admin / user); bcrypt hashing, account+IP brute-force lockout and a full audit trail
 - **Live task progress** — cleanup/scan tasks show an animated progress bar and the current phase (e.g. "scanning /home (2/7)") in the task records view
@@ -35,7 +34,7 @@ FRPilot (single binary, runs on the frps server)
  ├─ Embedded Web UI (Vue3 + ECharts)
  ├─ frps dashboard API client ──► machine discovery / traffic stats
  ├─ SSH collector (x/crypto/ssh) ──► frps host + each frpc via the frp tunnel
- ├─ Action executor (cleanup / health check / virus scan — async tasks with live progress)
+ ├─ Action executor (cleanup / security suite: health check + virus scan — async tasks with live progress)
  ├─ AI diagnosis client (OpenAI-compatible chat/completions)
  └─ SQLite (WAL mode, 30-day retention cleanup)
 ```
@@ -86,7 +85,7 @@ System metrics start within 30 seconds; security software, cron and port data ar
 | Overview | machine counts, frps status, token baseline, last seen |
 | Machines | machine list, SSH credentials + sudo password (⋮ menu), monitoring toggle, 24h trend charts, disk / security / cron / ports detail |
 | Traffic | bandwidth direction chart, live rates, 24h history, anomaly flags |
-| Actions | one-click cleanup (preview → confirm → execute), health check (report + history), virus scan (ClamAV/rootkit, live progress), AI diagnosis, task records with progress bars |
+| Actions | one-click cleanup (preview → confirm → execute), security suite (health report + history / virus scan: ClamAV, rootkit, signature update — live progress), AI diagnosis, task records with progress bars |
 | Settings | frps connection, token baseline, registration mode, health thresholds, custom cleanup commands, AI provider |
 
 ### CLI (frpm)
@@ -104,7 +103,7 @@ frpm ports <id|name>                # open ports
 frpm traffic                        # traffic stats and bandwidth direction
 frpm health <id|name>               # one-click health check
 frpm cleanup <id|name> [--items a,b] # cleanup (preview by default, --execute to run)
-frpm scan <id|name>... [--mode quick|full|rootkit]  # virus scan (default quick)
+frpm scan <id|name>... [--mode quick|full|rootkit|update]  # virus scan (default quick; update = refresh ClamAV signatures)
 frpm diagnose <id|name>             # AI diagnosis
 frpm tasks                          # task results with live progress (% + current phase)
 frpm settings detect-frps           # auto-detect frps config
@@ -239,7 +238,7 @@ Fill in the SSH user/password on the Machines page and click "Enable monitoring"
 Configure a **sudo password** for that machine in "Machines → edit credentials" (or use root as the SSH user). Once set, collection, cleanup and virus-scan commands that need root automatically elevate via `sudo -S` instead of being skipped.
 
 **Q: How long does a virus scan take?**
-Quick scan (7 common directories) typically 10-30 minutes; full scan can take hours depending on the machine; rootkit check takes about 2-10 minutes. Tasks run in the background — the task records view refreshes every 3 seconds and shows a live progress bar with the current directory being scanned. If a tool isn't installed, the task reports "ClamAV not detected" instead of failing.
+Quick scan (7 common directories) typically 10-30 minutes; full scan can take hours depending on the machine; rootkit check takes about 2-10 minutes; the "update signatures" mode refreshes via freshclam in roughly 1-10 minutes. Tasks run in the background — the task records view refreshes every 3 seconds and shows a live progress bar with the current directory being scanned. If a tool isn't installed, the task reports "ClamAV not detected" instead of failing; running the signature update before a scan is recommended so an outdated database doesn't cause missed detections.
 
 **Q: How do I use it on my phone?**
 Visit the same URL — the UI adapts automatically; use the browser's "Add to Home Screen" for an app-like experience.

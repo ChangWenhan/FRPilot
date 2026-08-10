@@ -8,8 +8,7 @@
 
     <div class="tabs">
       <button type="button" class="tab" :class="{ on: tab === 'cleanup' }" @click="tab = 'cleanup'">一键清理</button>
-      <button type="button" class="tab" :class="{ on: tab === 'health' }" @click="tab = 'health'">一键体检</button>
-      <button type="button" class="tab" :class="{ on: tab === 'scan' }" @click="tab = 'scan'">病毒扫描</button>
+      <button type="button" class="tab" :class="{ on: tab === 'security' }" @click="tab = 'security'">安全体检</button>
       <button type="button" class="tab" :class="{ on: tab === 'tasks' }" @click="tab = 'tasks'">执行记录</button>
     </div>
 
@@ -71,8 +70,15 @@
       <p v-if="msg" :class="msgOk ? 'msg msg--ok' : 'msg msg--err'">{{ msg }}</p>
     </div>
 
-    <!-- 一键体检 -->
-    <div v-if="tab === 'health'">
+    <!-- 安全体检：一键体检 + 病毒扫描 -->
+    <div v-if="tab === 'security'">
+      <div class="tabs tabs--sub">
+        <button type="button" class="tab" :class="{ on: st === 'health' }" @click="st = 'health'">一键体检</button>
+        <button type="button" class="tab" :class="{ on: st === 'scan' }" @click="st = 'scan'">病毒扫描</button>
+      </div>
+
+      <!-- 一键体检 -->
+      <div v-if="st === 'health'">
       <div class="card">
         <div class="card-head"><h3>选择机器</h3></div>
         <div class="card-body">
@@ -140,10 +146,10 @@
           </table>
         </div>
       </div>
-    </div>
+      </div>
 
-    <!-- 病毒扫描 -->
-    <div v-if="tab === 'scan'">
+      <!-- 病毒扫描 -->
+      <div v-if="st === 'scan'">
       <div class="card">
         <div class="card-head">
           <h3>选择机器</h3>
@@ -172,12 +178,13 @@
             </label>
           </div>
           <div class="action-bar" style="margin-top: 16px">
-            <span class="hint">扫描耗时较长（快速约 10-30 分钟，全盘可能数小时），任务在后台执行，可随时到「执行记录」查看进度</span>
-            <button class="btn" @click="runScan" :disabled="!scanMachines.length">开始扫描</button>
+            <span class="hint">{{ scanMode === 'update' ? '更新病毒库约需 1-10 分钟（需联网），后台执行' : '扫描耗时较长（快速约 10-30 分钟，全盘可能数小时），任务在后台执行，可随时到「执行记录」查看进度' }}</span>
+            <button class="btn" @click="runScan" :disabled="!scanMachines.length">{{ scanMode === 'update' ? '开始更新' : '开始扫描' }}</button>
           </div>
         </div>
       </div>
       <p v-if="scanMsg" :class="scanMsgOk ? 'msg msg--ok' : 'msg msg--err'">{{ scanMsg }}</p>
+      </div>
     </div>
 
     <!-- 执行记录 -->
@@ -229,6 +236,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { get, post } from '../api.js'
 
 const tab = ref('cleanup')
+const st = ref('health')
 const machines = ref([])
 const items = ref([])
 const cleanupMachines = ref([])
@@ -252,6 +260,7 @@ const scanModes = [
   { value: 'quick', label: 'ClamAV 快速扫描', desc: '扫描常用目录（/etc /home /tmp /opt /usr/local /root /var/www），适合日常巡检' },
   { value: 'full', label: 'ClamAV 全盘扫描', desc: '扫描整个根目录 /，最彻底但耗时很长，可能数小时' },
   { value: 'rootkit', label: 'Rootkit 检查', desc: 'rkhunter + chkrootkit，检查后门、rootkit 与隐藏痕迹' },
+  { value: 'update', label: '更新病毒库', desc: 'freshclam 更新 ClamAV 病毒库，扫描前建议先更新（未安装时自动跳过）' },
 ]
 
 const riskText = { low: '低危', mid: '中危', high: '高危' }
@@ -306,10 +315,12 @@ async function runCleanup() {
 async function runScan() {
   scanMsg.value = ''
   const mode = scanModes.find(o => o.value === scanMode.value)?.label || scanMode.value
-  if (!confirm(`确认对 ${scanMachines.value.length} 台机器执行「${mode}」？扫描耗时较长，请在执行记录中查看进度。`)) return
+  const isUpdate = scanMode.value === 'update'
+  const tip = isUpdate ? '更新 ClamAV 病毒库通常需要 1-10 分钟' : '扫描耗时较长，请在执行记录中查看进度'
+  if (!confirm(`确认对 ${scanMachines.value.length} 台机器执行「${mode}」？${tip}。`)) return
   try {
     await post('/api/actions/scan', { machineIds: scanMachines.value, mode: scanMode.value })
-    scanMsg.value = '扫描任务已创建，请在「执行记录」查看进度与结果'
+    scanMsg.value = '任务已创建，请在「执行记录」查看进度与结果'
     scanMsgOk.value = true
     tab.value = 'tasks'
     loadTasks()

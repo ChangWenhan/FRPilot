@@ -659,7 +659,7 @@ func cmdHealth(c *Client, rest []string, jsonOut bool) error {
 // cmdScan 病毒扫描：quick（ClamAV 常用目录）/ full（全盘）/ rootkit（rkhunter/chkrootkit）。
 func cmdScan(c *Client, rest []string, jsonOut bool) error {
 	if len(rest) < 1 {
-		return fmt.Errorf("用法: frpm actions scan <id|name>... --mode quick|full|rootkit")
+		return fmt.Errorf("用法: frpm actions scan <id|name>... --mode quick|full|rootkit|update")
 	}
 	mode := "quick"
 	var targets []string

@@ -15,20 +15,23 @@ const (
 	ScanModeQuick   = "quick"   // ClamAV 快速：常用目录
 	ScanModeFull    = "full"    // ClamAV 全盘：/
 	ScanModeRootkit = "rootkit" // rkhunter + chkrootkit
+	ScanModeUpdate  = "update"  // freshclam 更新 ClamAV 病毒库
 )
 
 var scanModeLabels = map[string]string{
 	ScanModeQuick:   "ClamAV 快速扫描",
 	ScanModeFull:    "ClamAV 全盘扫描",
 	ScanModeRootkit: "Rootkit 检查",
+	ScanModeUpdate:  "更新病毒库",
 }
 
 var clamInfectedRe = regexp.MustCompile(`^(.+?):\s*(FOUND|ERROR)(\.\d+)?\s*$`)
 
 const (
-	quickPerDirTimeout = 8 * time.Minute // 快速模式：单目录超时
-	fullPerDirTimeout  = 30 * time.Minute // 全盘模式：单目录超时
+	quickPerDirTimeout  = 8 * time.Minute  // 快速模式：单目录超时
+	fullPerDirTimeout   = 30 * time.Minute // 全盘模式：单目录超时
 	rootkitPhaseTimeout = 10 * time.Minute
+	updateTimeout       = 10 * time.Minute // 病毒库更新超时（freshclam 可能下载大文件）
 )
 
 // scanPhase 单台机器内的一个扫描阶段（一个 SSH 命令）。
@@ -38,6 +41,13 @@ type scanPhase struct {
 	timeout time.Duration
 	// marker 该阶段工具缺失时的输出标记；命中后跳过后续阶段。
 	marker string
+}
+
+// guardedCmd 包裹远端命令：仅当工具存在时才执行扫描，缺失时输出 marker。
+// 命令一律以 0 退出，避免工具自身的非零退出码（clamscan: 1=发现病毒/2=扫描出错，
+// rkhunter: 1=发现警告/2=出错）被误判为"工具缺失"或"命令中断/超时"。
+func guardedCmd(check, run, marker string) string {
+	return fmt.Sprintf("if %s >/dev/null 2>&1; then %s 2>&1; else echo '%s'; fi; exit 0", check, run, marker)
 }
 
 // scanPhases 按模式构造扫描阶段序列（逐目录执行，便于实时进度）。
@@ -54,15 +64,24 @@ func scanPhases(mode string) []scanPhase {
 		return []scanPhase{
 			{
 				label:   "rkhunter 检查",
-				cmd:     `command -v rkhunter >/dev/null 2>&1 && rkhunter --check --skip-keypress --nocolors --no-version-check 2>&1 || echo "__NO_RKHUNTER__"`,
+				cmd:     guardedCmd(`command -v rkhunter`, `rkhunter --check --skip-keypress --nocolors --no-version-check`, "__NO_RKHUNTER__"),
 				timeout: rootkitPhaseTimeout,
 				marker:  "__NO_RKHUNTER__",
 			},
 			{
 				label:   "chkrootkit 检查",
-				cmd:     `command -v chkrootkit >/dev/null 2>&1 && chkrootkit 2>&1 || echo "__NO_CHKROOTKIT__"`,
+				cmd:     guardedCmd(`command -v chkrootkit`, `chkrootkit`, "__NO_CHKROOTKIT__"),
 				timeout: rootkitPhaseTimeout,
 				marker:  "__NO_CHKROOTKIT__",
+			},
+		}
+	case ScanModeUpdate:
+		return []scanPhase{
+			{
+				label:   "更新 ClamAV 病毒库",
+				cmd:     guardedCmd(`command -v freshclam`, `freshclam --stdout`, "__NO_FRESHCLAM__"),
+				timeout: updateTimeout,
+				marker:  "__NO_FRESHCLAM__",
 			},
 		}
 	}
@@ -71,9 +90,10 @@ func scanPhases(mode string) []scanPhase {
 func dirPhases(dirs []string, perDirTimeout time.Duration) []scanPhase {
 	phases := make([]scanPhase, 0, len(dirs))
 	for i, d := range dirs {
+		// 注意：不要加 --no-banner，ClamAV >= 1.5 已移除该选项（未知选项导致退出码 2）。
 		phases = append(phases, scanPhase{
 			label:   fmt.Sprintf("扫描 %s（%d/%d）", d, i+1, len(dirs)),
-			cmd:     fmt.Sprintf(`command -v clamscan >/dev/null 2>&1 && clamscan -r -i --no-banner --max-filesize=128M --max-scansize=512M %s 2>&1 || echo "__NO_CLAMAV__"`, d),
+			cmd:     guardedCmd(`command -v clamscan`, fmt.Sprintf(`clamscan -r -i --max-filesize=128M --max-scansize=512M %s`, d), "__NO_CLAMAV__"),
 			timeout: perDirTimeout,
 			marker:  "__NO_CLAMAV__",
 		})
@@ -219,6 +239,8 @@ func toolMissingNote(marker string) string {
 		return "未检测到 rkhunter"
 	case "__NO_CHKROOTKIT__":
 		return "未检测到 chkrootkit"
+	case "__NO_FRESHCLAM__":
+		return "未检测到 freshclam（apt install clamav 后重试）"
 	}
 	return "未检测到对应扫描工具"
 }
@@ -257,6 +279,41 @@ func summarizeScan(mode, raw string) string {
 			}
 		} else {
 			sb.WriteString("\n未发现威胁\n")
+		}
+		return sb.String()
+	case ScanModeUpdate:
+		if strings.Contains(raw, "__NO_FRESHCLAM__") {
+			return "未检测到 freshclam（apt install clamav 后重试）"
+		}
+		var sb strings.Builder
+		sb.WriteString("ClamAV 病毒库更新\n")
+		matched := false
+		for _, line := range strings.Split(raw, "\n") {
+			l := strings.TrimSpace(line)
+			if l == "" {
+				continue
+			}
+			for _, k := range []string{"Database updated", "already up-to-date", "OUTDATED",
+				"Current database version", "Database version", "Downloading", "bytecode",
+				"Checking availability", "Update process", "Last update"} {
+				if strings.Contains(l, k) {
+					sb.WriteString(l + "\n")
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			// 兜底：未解析到关键输出时展示原始输出尾部
+			sb.WriteString("（未解析到关键输出，原始输出尾部如下）\n")
+			lines := strings.Split(raw, "\n")
+			start := len(lines) - 8
+			if start < 0 {
+				start = 0
+			}
+			for _, l := range lines[start:] {
+				sb.WriteString(strings.TrimSpace(l) + "\n")
+			}
 		}
 		return sb.String()
 	default: // rootkit
