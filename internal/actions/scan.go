@@ -78,8 +78,9 @@ func scanPhases(mode string) []scanPhase {
 	case ScanModeUpdate:
 		return []scanPhase{
 			{
+				// 用独立日志文件避免与 freshclam 守护进程争抢 /var/log/clamav/freshclam.log 的锁
 				label:   "更新 ClamAV 病毒库",
-				cmd:     guardedCmd(`command -v freshclam`, `freshclam --stdout`, "__NO_FRESHCLAM__"),
+				cmd:     guardedCmd(`command -v freshclam`, `freshclam --stdout -l /tmp/frpm-freshclam.log; rm -f /tmp/frpm-freshclam.log`, "__NO_FRESHCLAM__"),
 				timeout: updateTimeout,
 				marker:  "__NO_FRESHCLAM__",
 			},
@@ -287,6 +288,9 @@ func summarizeScan(mode, raw string) string {
 		}
 		var sb strings.Builder
 		sb.WriteString("ClamAV 病毒库更新\n")
+		if strings.Contains(raw, "Failed to lock") || strings.Contains(raw, "Resource temporarily unavailable") {
+			sb.WriteString("提示：freshclam 守护进程（clamav-freshclam 服务）正在更新病毒库，本次未能立即执行；守护进程默认每 2 小时自动更新一次，请稍后重试\n")
+		}
 		matched := false
 		for _, line := range strings.Split(raw, "\n") {
 			l := strings.TrimSpace(line)

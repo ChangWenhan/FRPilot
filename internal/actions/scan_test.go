@@ -102,6 +102,19 @@ func TestSummarizeScanUpdateNoFreshclam(t *testing.T) {
 	}
 }
 
+// 回归：freshclam 守护进程占用日志锁时，应给出守护进程自动更新的提示而非原始报错。
+func TestSummarizeScanUpdateLockConflict(t *testing.T) {
+	raw := `ERROR: Failed to lock the log file /var/log/clamav/freshclam.log: Resource temporarily unavailable
+ERROR: Problem with internal logger (UpdateLogFile = /var/log/clamav/freshclam.log).
+ERROR: initialize: libfreshclam init failed.
+ERROR: Initialization error!
+`
+	got := summarizeScan(ScanModeUpdate, raw)
+	if !strings.Contains(got, "freshclam 守护进程") {
+		t.Errorf("锁冲突应提示守护进程自动更新\n---\n%s", got)
+	}
+}
+
 func TestScanPhases(t *testing.T) {
 	quick := scanPhases(ScanModeQuick)
 	if len(quick) != 7 {
