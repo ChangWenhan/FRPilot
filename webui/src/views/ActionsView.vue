@@ -212,8 +212,15 @@
           <div class="prog-track"><div class="prog-fill" :style="{ width: (t.status === 'running' ? t.progress.pct : 100) + '%' }"></div></div>
         </div>
         <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th style="width: 36px"></th><th>机器</th><th>项目</th><th class="num">耗时</th><th>输出</th></tr></thead>
+          <table class="table task-table">
+            <colgroup>
+              <col style="width: 34px" />
+              <col style="width: 19%" />
+              <col style="width: 20%" />
+              <col style="width: 13%" />
+              <col />
+            </colgroup>
+            <thead><tr><th></th><th>机器</th><th>项目</th><th class="num">耗时</th><th>输出</th></tr></thead>
             <tbody>
               <tr v-for="(r, i) in t.results" :key="i">
                 <td class="num">{{ mark[r.status] }}</td>
@@ -374,4 +381,9 @@ function overallBorder(o) {
 .card--ok { border-color: #14553f; }
 .card--warn { border-color: #4d3d14; }
 .card--danger { border-color: #5b1f1f; }
+.task-table { table-layout: fixed; }
+.task-table th:nth-child(1) { width: 34px; }
+.task-table th:nth-child(2) { width: 19%; }
+.task-table th:nth-child(3) { width: 20%; }
+.task-table th:nth-child(4) { width: 13%; }
 </style>
