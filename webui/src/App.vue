@@ -3,7 +3,6 @@
     <nav v-if="me">
       <span class="brand">FRPilot</span>
       <div class="nav-links">
-        <router-link to="/">总览</router-link>
         <router-link to="/machines">机器</router-link>
         <router-link to="/traffic">流量</router-link>
         <router-link to="/actions">操作</router-link>

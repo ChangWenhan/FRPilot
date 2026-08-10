@@ -82,8 +82,7 @@ System metrics start within 30 seconds; security software, cron and port data ar
 
 | Page | Purpose |
 |------|---------|
-| Overview | machine counts, frps status, token baseline, last seen |
-| Machines | machine list, SSH credentials + sudo password (⋮ menu), monitoring toggle, 24h trend charts, disk / security / cron / ports detail |
+| Machines | machine stats (total / monitoring / pending / frps clients / traffic), token baseline, machine list (SSH credentials + sudo password (⋮ menu), monitoring toggle, last seen), 24h trend charts, disk / security / cron / ports detail |
 | Traffic | bandwidth direction chart, live rates, 24h history, anomaly flags |
 | Actions | one-click cleanup (preview → confirm → execute), security suite (health report + history / virus scan: ClamAV, rootkit, signature update — live progress), AI diagnosis, task records with progress bars |
 | Settings | frps connection, token baseline, registration mode, health thresholds, custom cleanup commands, AI provider |

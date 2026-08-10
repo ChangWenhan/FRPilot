@@ -1,14 +1,33 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>机器管理</h2>
-      <span class="sub">共 {{ machines.length }} 台</span>
+      <h2>机器</h2>
+      <span class="sub">共 {{ machines.length }} 台 · 每 15 秒自动刷新</span>
       <span class="grow" />
       <button v-if="isAdmin" class="btn btn--ghost btn--sm" @click="discover">重新扫描 frps</button>
     </div>
     <p v-if="discoverMsg" class="msg msg--ok">{{ discoverMsg }}</p>
 
-    <div class="card">
+    <div v-if="status" class="stat-grid">
+      <div class="stat"><div class="v">{{ status.machines.total }}</div><div class="l">机器总数</div></div>
+      <div class="stat"><div class="v v--ok">{{ status.machines.enabled }}</div><div class="l">监控中</div></div>
+      <div class="stat"><div class="v v--warn">{{ status.machines.pending }}</div><div class="l">待配置</div></div>
+      <div class="stat"><div class="v">{{ status.frps?.clients ?? '-' }}</div><div class="l">frps 在线客户端</div></div>
+      <div class="stat">
+        <div class="v v--sm">{{ fmtBytes(status.frps?.trafficIn) }} / {{ fmtBytes(status.frps?.trafficOut) }}</div>
+        <div class="l">累计入 / 出流量</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px">
+      <div class="card-head">
+        <h3>token 基线</h3>
+        <code>{{ status?.tokenSet ? status?.tokenMask : '未设置' }}</code>
+        <span class="badge badge--ok">已保护，不回显原文</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px">
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -18,6 +37,7 @@
               <th class="num">隧道端口</th>
               <th>状态</th>
               <th>SSH 凭据</th>
+              <th>最近在线</th>
               <th style="width: 90px" class="num">操作</th>
             </tr>
           </thead>
@@ -35,6 +55,7 @@
                     {{ m.hasCredentials ? `${m.sshUser}${m.hasSudo ? ' +sudo' : ''}` : '未配置' }}
                   </span>
                 </td>
+                <td class="muted-cell">{{ m.lastSeenAt ? fmtTs(m.lastSeenAt) : '-' }}</td>
                 <td>
                   <div class="td-actions">
                     <router-link class="btn btn--ghost btn--sm btn--icon" :to="`/machines/${m.id}`" title="详情">
@@ -45,7 +66,7 @@
                 </td>
               </tr>
               <tr v-if="editId === m.id" class="edit-row">
-                <td colspan="6">
+                <td colspan="7">
                   <div class="edit-panel">
                     <div class="edit-fields">
                       <div class="field">
@@ -70,7 +91,7 @@
               </tr>
             </template>
             <tr v-if="!machines.length">
-              <td colspan="6" class="empty-row">
+              <td colspan="7" class="empty-row">
                 尚未发现机器。请先在「设置」配置 frps 连接信息，然后点击「重新扫描 frps」。
               </td>
             </tr>
@@ -82,25 +103,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { get, post, statusText } from '../api.js'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { get, post, statusText, fmtBytes } from '../api.js'
 import ActionMenu from '../components/ActionMenu.vue'
 
 const machines = ref([])
+const status = ref(null)
 const editId = ref(null)
 const credUser = ref('')
 const credPass = ref('')
 const sudoPass = ref('')
 const isAdmin = ref(false)
 const discoverMsg = ref('')
+let timer = null
 
 onMounted(async () => {
   const me = await get('/api/auth/me')
   isAdmin.value = me.role === 'admin'
   await load()
+  timer = setInterval(load, 15000)
 })
+onUnmounted(() => clearInterval(timer))
 
 async function load() {
+  status.value = await get('/api/status')
   const r = await get('/api/machines')
   machines.value = r.machines
 }
@@ -116,6 +142,7 @@ async function discover() {
 function badgeCls(s) {
   return { pending: 'badge--warn', configured: 'badge--accent', enabled: 'badge--ok', disabled: 'badge' }[s] || ''
 }
+function fmtTs(t) { return new Date(t).toLocaleString() }
 
 function menuItems(m) {
   return [
