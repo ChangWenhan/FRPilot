@@ -128,34 +128,38 @@ type HealthThresholds struct {
 }
 
 type AppConfig struct {
-	ListenAddr      string              `json:"listenAddr"`
-	DataDir         string              `json:"dataDir"`
-	ConfigPath      string              `json:"-"`
-	Frps            FrpsConfig          `json:"frps"`
-	Registration    string              `json:"registration"` // open | approval | closed
-	SessionTTLDays  int                 `json:"sessionTTLDays"`
-	LoginMaxFails   int                 `json:"loginMaxFails"`
-	LoginLockMinute int                 `json:"loginLockMinutes"`
-	LoginIPMaxFails int                 `json:"loginIPMaxFails"`
-	LoginWindowMin  int                 `json:"loginWindowMinutes"`
-	Health          HealthThresholds    `json:"health"`
-	CleanupCustom   []CustomCleanupItem `json:"cleanupCustom"`
-	AI              AiConfig            `json:"ai"`
-	TLS             TlsConfig           `json:"tls"`
-	Version         string              `json:"-"`
+	ListenAddr     string     `json:"listenAddr"`
+	DataDir        string     `json:"dataDir"`
+	ConfigPath     string     `json:"-"`
+	Frps           FrpsConfig `json:"frps"`
+	Registration   string     `json:"registration"` // open | approval | closed
+	SessionTTLDays int        `json:"sessionTTLDays"`
+	// SessionGraceMinutes 是 Web 端登录 cookie 的滑动有效期（分钟）：
+	// 关闭网页后在窗口内再次访问无需登录，窗口随每次请求向后滑动。
+	SessionGraceMinutes int                 `json:"sessionGraceMinutes"`
+	LoginMaxFails       int                 `json:"loginMaxFails"`
+	LoginLockMinute     int                 `json:"loginLockMinutes"`
+	LoginIPMaxFails     int                 `json:"loginIPMaxFails"`
+	LoginWindowMin      int                 `json:"loginWindowMinutes"`
+	Health              HealthThresholds    `json:"health"`
+	CleanupCustom       []CustomCleanupItem `json:"cleanupCustom"`
+	AI                  AiConfig            `json:"ai"`
+	TLS                 TlsConfig           `json:"tls"`
+	Version             string              `json:"-"`
 }
 
 func DefaultConfig(dataDir string) *AppConfig {
 	return &AppConfig{
-		ListenAddr:      "0.0.0.0:8443",
-		DataDir:         dataDir,
-		ConfigPath:      filepath.Join(dataDir, "config.json"),
-		Registration:    "open",
-		SessionTTLDays:  7,
-		LoginMaxFails:   5,
-		LoginLockMinute: 10,
-		LoginIPMaxFails: 15,
-		LoginWindowMin:  15,
+		ListenAddr:          "0.0.0.0:8443",
+		DataDir:             dataDir,
+		ConfigPath:          filepath.Join(dataDir, "config.json"),
+		Registration:        "open",
+		SessionTTLDays:      7,
+		SessionGraceMinutes: 5,
+		LoginMaxFails:       5,
+		LoginLockMinute:     10,
+		LoginIPMaxFails:     15,
+		LoginWindowMin:      15,
 		Health: HealthThresholds{
 			CPUWarn: 70, CPUFail: 85,
 			MemWarn: 80, MemFail: 90,
@@ -295,6 +299,9 @@ func applyDefaults(cfg, defaults *AppConfig) {
 	}
 	if cfg.SessionTTLDays <= 0 {
 		cfg.SessionTTLDays = defaults.SessionTTLDays
+	}
+	if cfg.SessionGraceMinutes <= 0 {
+		cfg.SessionGraceMinutes = defaults.SessionGraceMinutes
 	}
 	if cfg.LoginMaxFails <= 0 {
 		cfg.LoginMaxFails = defaults.LoginMaxFails

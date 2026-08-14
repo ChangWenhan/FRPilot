@@ -129,6 +129,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { get, post, fmtBytes, statusText } from '../api.js'
+import { cssVar, THEME_EVENT } from '../theme.js'
 
 const route = useRoute()
 const machine = ref(null)
@@ -140,11 +141,17 @@ let timer = null
 onMounted(async () => {
   await load()
   timer = setInterval(load, 15000)
+  document.addEventListener(THEME_EVENT, redraw)
 })
 onUnmounted(() => {
   clearInterval(timer)
+  document.removeEventListener(THEME_EVENT, redraw)
   trendInst?.dispose()
 })
+
+function redraw() {
+  if (data.value) loadMetrics()
+}
 
 async function load() {
   const r = await get(`/api/machines/${route.params.id}/snapshot`)
@@ -166,14 +173,14 @@ async function loadMetrics() {
   if (!trendInst) trendInst = echarts.init(trendChart.value)
   trendInst.setOption({
     tooltip: { trigger: 'axis', formatter: p => p.map(x => `${x.seriesName}: ${x.value == null ? '-' : x.value.toFixed(1) + '%'}`).join('<br/>') },
-    legend: { data: ['CPU', '内存', '磁盘', 'GPU'], textStyle: { color: '#8b9cbd' } },
+    legend: { data: ['CPU', '内存', '磁盘', 'GPU'], textStyle: { color: cssVar('--muted') } },
     grid: { left: 50, right: 20, top: 30, bottom: 40 },
-    xAxis: { type: 'category', data: times, axisLabel: { color: '#5f7194', fontSize: 10 } },
-    yAxis: { type: 'value', max: 100, axisLabel: { color: '#5f7194' } },
+    xAxis: { type: 'category', data: times, axisLabel: { color: cssVar('--muted-2'), fontSize: 10 } },
+    yAxis: { type: 'value', max: 100, axisLabel: { color: cssVar('--muted-2') } },
     series: [
-      { name: 'CPU', type: 'line', data: cpu, smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } },
-      { name: '内存', type: 'line', data: mem, smooth: true, showSymbol: false, itemStyle: { color: '#34d399' } },
-      { name: '磁盘', type: 'line', data: disk, smooth: true, showSymbol: false, itemStyle: { color: '#fbbf24' } },
+      { name: 'CPU', type: 'line', data: cpu, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--accent') } },
+      { name: '内存', type: 'line', data: mem, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--ok') } },
+      { name: '磁盘', type: 'line', data: disk, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--warn') } },
       { name: 'GPU', type: 'line', data: gpu, smooth: true, showSymbol: false, itemStyle: { color: '#f472b6' } },
     ],
   })

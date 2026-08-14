@@ -78,6 +78,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { get, fmtBytes } from '../api.js'
+import { cssVar, THEME_EVENT } from '../theme.js'
 
 const snap = ref(null)
 const flowChart = ref(null)
@@ -89,12 +90,22 @@ let timer = null
 onMounted(async () => {
   await load()
   timer = setInterval(load, 15000)
+  document.addEventListener(THEME_EVENT, redraw)
 })
 onUnmounted(() => {
   clearInterval(timer)
+  document.removeEventListener(THEME_EVENT, redraw)
   flowInst?.dispose()
   trendInst?.dispose()
 })
+
+// 主题切换后按新配色重绘两张图
+function redraw() {
+  if (snap.value?.flows?.length) {
+    drawFlow()
+    loadHistory()
+  }
+}
 
 async function load() {
   snap.value = await get('/api/traffic')
@@ -131,11 +142,11 @@ function drawFlow() {
       return `${f.proxy}<br/>入 ${fmtBytes(f.rateIn)}/s<br/>出 ${fmtBytes(f.rateOut)}/s<br/>累计入 ${fmtBytes(f.inBytes)} (${f.pctIn}%)`
     } },
     grid: { left: 120, right: 30, top: 10, bottom: 25 },
-    xAxis: { type: 'value' },
-    yAxis: { type: 'category', data: sorted.map(f => f.proxy), axisLabel: { color: '#8b9cbd', overflow: 'truncate', width: 100 } },
+    xAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2') } },
+    yAxis: { type: 'category', data: sorted.map(f => f.proxy), axisLabel: { color: cssVar('--muted'), overflow: 'truncate', width: 100 } },
     series: [
-      { name: '入', type: 'bar', stack: 't', data: sorted.map(f => f.rateIn), itemStyle: { color: '#38bdf8' } },
-      { name: '出', type: 'bar', stack: 't', data: sorted.map(f => f.rateOut), itemStyle: { color: '#34d399' } },
+      { name: '入', type: 'bar', stack: 't', data: sorted.map(f => f.rateIn), itemStyle: { color: cssVar('--accent') } },
+      { name: '出', type: 'bar', stack: 't', data: sorted.map(f => f.rateOut), itemStyle: { color: cssVar('--ok') } },
     ],
   })
 }
@@ -145,13 +156,13 @@ function drawTrend(times, inData, outData) {
   if (!trendInst) trendInst = echarts.init(trendChart.value)
   trendInst.setOption({
     tooltip: { trigger: 'axis', formatter: p => p.map(x => `${x.seriesName}: ${fmtBytes(x.value)}/s`).join('<br/>') },
-    legend: { data: ['入速率', '出速率'], textStyle: { color: '#8b9cbd' } },
+    legend: { data: ['入速率', '出速率'], textStyle: { color: cssVar('--muted') } },
     grid: { left: 60, right: 20, top: 30, bottom: 40 },
-    xAxis: { type: 'category', data: times, axisLabel: { color: '#5f7194' } },
-    yAxis: { type: 'value', axisLabel: { color: '#5f7194' } },
+    xAxis: { type: 'category', data: times, axisLabel: { color: cssVar('--muted-2') } },
+    yAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2') } },
     series: [
-      { name: '入速率', type: 'line', data: inData, smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } },
-      { name: '出速率', type: 'line', data: outData, smooth: true, showSymbol: false, itemStyle: { color: '#34d399' } },
+      { name: '入速率', type: 'line', data: inData, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--accent') } },
+      { name: '出速率', type: 'line', data: outData, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--ok') } },
     ],
   })
 }

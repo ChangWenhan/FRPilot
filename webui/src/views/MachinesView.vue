@@ -185,7 +185,7 @@ function eyeIcon() { return '<svg width="13" height="13" viewBox="0 0 24 24" fil
 .truncate { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-block { display: block; }
 .td-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.edit-row td { background: rgba(56, 189, 248, .03); }
+.edit-row td { background: var(--accent-tint); }
 .edit-panel { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
 .edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }

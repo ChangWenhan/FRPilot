@@ -181,11 +181,12 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	c := s.cfg.Get()
 	tokenSet := c.Frps.Token != ""
 	writeJSON(w, http.StatusOK, map[string]any{
-		"listenAddr":     c.ListenAddr,
-		"registration":   c.Registration,
-		"sessionTTLDays": c.SessionTTLDays,
-		"health":         c.Health,
-		"cleanupCustom":  c.CleanupCustom,
+		"listenAddr":          c.ListenAddr,
+		"registration":        c.Registration,
+		"sessionTTLDays":      c.SessionTTLDays,
+		"sessionGraceMinutes": c.SessionGraceMinutes,
+		"health":              c.Health,
+		"cleanupCustom":       c.CleanupCustom,
 		"ai": map[string]any{
 			"enabled":     c.AI.Enabled,
 			"providerUrl": c.AI.ProviderURL,

@@ -8,6 +8,9 @@ import TrafficView from './views/TrafficView.vue'
 import ActionsView from './views/ActionsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import './styles.css'
+import { initTheme } from './theme.js'
+
+initTheme()
 
 const router = createRouter({
   history: createWebHistory(),

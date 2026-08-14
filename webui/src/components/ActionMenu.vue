@@ -70,7 +70,7 @@ onBeforeUnmount(() => {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, .45);
+  box-shadow: 0 12px 28px var(--shadow);
 }
 .menu-item {
   display: flex;
@@ -88,9 +88,9 @@ onBeforeUnmount(() => {
   text-align: left;
   cursor: pointer;
 }
-.menu-item:hover:not(:disabled) { background: rgba(56, 189, 248, .1); }
+.menu-item:hover:not(:disabled) { background: var(--accent-soft); }
 .menu-item--danger { color: var(--danger); }
-.menu-item--danger:hover:not(:disabled) { background: rgba(248, 113, 113, .1); }
+.menu-item--danger:hover:not(:disabled) { background: var(--danger-soft); }
 .menu-item--disabled { color: var(--muted-2); cursor: not-allowed; }
 .mi { display: inline-flex; width: 16px; justify-content: center; }
 </style>

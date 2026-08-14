@@ -378,9 +378,9 @@ function overallBorder(o) {
 .preview-item:last-child { margin-bottom: 0; }
 .preview-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13.5px; }
 .diag-text { max-height: 420px; overflow-y: auto; margin-top: 10px; }
-.card--ok { border-color: #14553f; }
-.card--warn { border-color: #4d3d14; }
-.card--danger { border-color: #5b1f1f; }
+.card--ok { border-color: var(--ok-border); }
+.card--warn { border-color: var(--warn-border); }
+.card--danger { border-color: var(--danger-border); }
 .task-table { table-layout: fixed; }
 .task-table th:nth-child(1) { width: 34px; }
 .task-table th:nth-child(2) { width: 19%; }

@@ -137,6 +137,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 			return
 		}
+		s.extendSessionCookie(w, r)
 		next(w, r.WithContext(withUser(r, u)))
 	}
 }
@@ -152,8 +153,20 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "需要管理员权限"})
 			return
 		}
+		s.extendSessionCookie(w, r)
 		next(w, r.WithContext(withUser(r, u)))
 	}
+}
+
+// extendSessionCookie 在每次 cookie 鉴权成功后把登录 cookie 的滑动窗口
+// 重新刷满（默认 5 分钟）。Bearer token（CLI）不携带 cookie，不受影响；
+// 纯 HTTP 头操作、无数据库写入，开销可忽略。
+func (s *Server) extendSessionCookie(w http.ResponseWriter, r *http.Request) {
+	if _, err := r.Cookie("frpmon_token"); err != nil {
+		return
+	}
+	c := s.cfg.Get()
+	http.SetCookie(w, sessionCookie(sessionToken(r), c.SessionGraceMinutes*60, c.TLS.Enabled || r.TLS != nil))
 }
 
 // ---- 工具 ----

@@ -53,15 +53,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		errJSON(w, http.StatusUnauthorized, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "frpmon_token",
-		Value:    token,
-		Path:     "/",
-		MaxAge:   c.SessionTTLDays * 86400,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   c.TLS.Enabled || r.TLS != nil,
-	})
+	secure := c.TLS.Enabled || r.TLS != nil
+	// 登录 cookie 只保留 SessionGraceMinutes 滑动窗口（默认 5 分钟）：
+	// 关闭网页后在窗口内再次访问无需登录；每次鉴权成功时服务端会刷新
+	// MaxAge（见 extendSessionCookie），活跃使用期间不会掉线。
+	http.SetCookie(w, sessionCookie(token, c.SessionGraceMinutes*60, secure))
 	_ = s.db.Log(u.ID, u.Username, "login", u.Username, "ok")
 	response := map[string]any{
 		"username": u.Username,
@@ -143,13 +139,18 @@ func clientAddress(r *http.Request) string {
 
 func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	c := s.cfg.Get()
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, sessionCookie("", -1, c.TLS.Enabled || r.TLS != nil))
+}
+
+// sessionCookie 构造统一的登录会话 cookie（HttpOnly，防 XSS 读取）。
+func sessionCookie(value string, maxAge int, secure bool) *http.Cookie {
+	return &http.Cookie{
 		Name:     "frpmon_token",
-		Value:    "",
+		Value:    value,
 		Path:     "/",
-		MaxAge:   -1,
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   c.TLS.Enabled || r.TLS != nil,
-	})
+		Secure:   secure,
+	}
 }
