@@ -29,7 +29,7 @@
           <div ref="flowChart" class="chart"></div>
         </div>
 
-        <div class="card" style="margin-top: 16px">
+        <div class="card mt-4">
           <div class="card-head">
             <h3>各机器流量明细</h3>
             <span class="grow" />

@@ -38,7 +38,7 @@
         <div class="card-body">
           <div class="chip-grid">
             <label v-for="it in items" :key="it.id" class="chip" :class="{ on: cleanupItems.includes(it.id) }">
-              <input type="checkbox" :value="it.id" v-model="cleanupItems" />
+              <input class="checkbox" type="checkbox" :value="it.id" v-model="cleanupItems" />
               <span class="t">
                 {{ it.name }}
                 <span class="risk-tag" :class="'risk-' + it.risk">{{ riskText[it.risk] }}</span>
@@ -55,7 +55,7 @@
         <button class="btn btn--danger-solid" @click="runCleanup" :disabled="!cleanupMachines.length || !cleanupItems.length">执行清理</button>
       </div>
 
-      <div v-if="previewResults" class="card" style="margin-top: 16px">
+      <div v-if="previewResults" class="card mt-4">
         <div class="card-head"><h3>预览结果（未执行任何清理）</h3></div>
         <div class="card-body">
           <div v-for="(r, i) in previewResults" :key="i" class="preview-item">
@@ -89,13 +89,13 @@
               <span v-if="!m.hasCredentials" class="meta">未配置凭据</span>
             </label>
           </div>
-          <div class="action-bar" style="margin-top: 16px">
+          <div class="action-bar mt-4">
             <button class="btn" @click="runHealth" :disabled="!healthMachine">开始体检</button>
           </div>
         </div>
       </div>
 
-      <div v-if="report" class="card" style="margin-top: 16px" :class="overallBorder(report.overall)">
+      <div v-if="report" class="card mt-4" :class="overallBorder(report.overall)">
         <div class="card-head">
           <h3>体检报告 — {{ report.machine }}</h3>
           <span class="badge badge--accent">评分 {{ report.score }}/100</span>
@@ -114,13 +114,13 @@
             </tbody>
           </table>
         </div>
-        <div class="action-bar" style="padding: 14px 18px; margin: 0">
+        <div class="action-bar report-actions">
           <span v-if="diagnosing" class="hint">分析中（约需 10-30 秒）...</span>
           <span v-else class="hint">AI 仅输出文字建议，不会执行任何内容</span>
           <button class="btn btn--ghost" @click="runDiagnose" :disabled="diagnosing">🤖 AI 诊断分析</button>
         </div>
-        <div v-if="diagnosis" class="card-body" style="border-top: 1px solid var(--border)">
-          <div class="card-head" style="padding: 0 0 10px">
+        <div v-if="diagnosis" class="card-body report-diag">
+          <div class="card-head report-diag-head">
             <h3>AI 诊断结果</h3>
             <span v-if="diagnosis.flagged" class="badge badge--danger">⚠ 含疑似命令内容（仅供参考，未执行）</span>
             <span v-else class="badge badge--ok">纯分析内容</span>
@@ -177,7 +177,7 @@
               <span><b>{{ opt.label }}</b><span class="desc"><br />{{ opt.desc }}</span></span>
             </label>
           </div>
-          <div class="action-bar" style="margin-top: 16px">
+          <div class="action-bar mt-4">
             <span class="hint">{{ scanMode === 'update' ? '更新病毒库约需 1-10 分钟（需联网），后台执行' : '扫描耗时较长（快速约 10-30 分钟，全盘可能数小时），任务在后台执行，可随时到「执行记录」查看进度' }}</span>
             <button class="btn" @click="runScan" :disabled="!scanMachines.length">{{ scanMode === 'update' ? '开始更新' : '开始扫描' }}</button>
           </div>
@@ -381,6 +381,9 @@ function overallBorder(o) {
 .card--ok { border-color: var(--ok-border); }
 .card--warn { border-color: var(--warn-border); }
 .card--danger { border-color: var(--danger-border); }
+.report-actions { padding: 14px 18px; margin: 0; }
+.report-diag { border-top: 1px solid var(--border); }
+.report-diag-head { padding: 0 0 10px; }
 .task-table { table-layout: fixed; }
 .task-table th:nth-child(1) { width: 34px; }
 .task-table th:nth-child(2) { width: 19%; }

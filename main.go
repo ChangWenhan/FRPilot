@@ -24,7 +24,7 @@ import (
 	"frpmon/internal/web"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	// 提供给 CLI 使用（frpm version / 部署脚本读取）

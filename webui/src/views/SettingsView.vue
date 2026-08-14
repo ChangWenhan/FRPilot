@@ -131,8 +131,8 @@
         <div class="card-body">
           <p class="hint">AI 仅对体检报告做诊断分析，输出文字建议，系统不会执行其内容。</p>
           <div class="field-grid">
-            <div class="field field--inline" style="grid-column: 1 / -1">
-              <input type="checkbox" v-model="form.ai.enabled" style="accent-color: var(--accent-strong); width: 16px; height: 16px" />
+            <div class="field field--inline field--wide">
+              <input class="checkbox" type="checkbox" v-model="form.ai.enabled" />
               <label style="margin: 0; color: var(--fg)">启用 AI 诊断</label>
             </div>
             <div class="field"><label>Provider 地址</label><input class="input" v-model="form.ai.providerUrl" placeholder="https://api.deepseek.com/v1" /></div>

@@ -80,7 +80,7 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg);
   font: inherit;
@@ -89,6 +89,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .menu-item:hover:not(:disabled) { background: var(--accent-soft); }
+.menu-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
 .menu-item--danger { color: var(--danger); }
 .menu-item--danger:hover:not(:disabled) { background: var(--danger-soft); }
 .menu-item--disabled { color: var(--muted-2); cursor: not-allowed; }

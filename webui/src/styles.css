@@ -128,7 +128,7 @@ code, .mono { font-family: var(--mono); }
 }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
-.btn--sm { height: var(--control-h-sm); min-width: 72px; padding: 0 12px; font-size: 13px; border-radius: 6px; }
+.btn--sm { height: var(--control-h-sm); min-width: 72px; padding: 0 12px; font-size: 13px; border-radius: var(--radius-sm); }
 .btn--ghost { background: transparent; border-color: var(--border); color: var(--fg); }
 .btn--ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
 .btn--danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger); }
@@ -266,6 +266,8 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
   border-radius: var(--radius);
   margin-bottom: var(--sp-5);
 }
+/* 嵌入卡片内部的 tabs（如登录卡片）：背景加深一档与卡片表面区分 */
+.tabs--inset { background: var(--surface-2); }
 .tab {
   flex: 1 1 0;
   height: 34px;
@@ -280,6 +282,14 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 }
 .tab:hover { color: var(--fg); }
 .tab.on { background: var(--surface-3); color: var(--fg); font-weight: 600; }
+
+/* ---------- 键盘焦点环：与按钮一致，覆盖所有可交互控件 ---------- */
+.tab:focus-visible,
+.choice-item:focus-visible,
+.chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
 
 /* 页面内次级分段标签（如安全体检下的 一键体检/病毒扫描） */
 .tabs--sub {
@@ -334,9 +344,19 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 .choice-item:hover { border-color: var(--border-strong); }
 .choice-item.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .choice-item:has(input:disabled) { opacity: .45; cursor: not-allowed; }
-.choice-item input { accent-color: var(--accent-strong); width: 15px; height: 15px; flex: 0 0 auto; }
 .choice-item .meta { margin-left: auto; color: var(--muted-2); font-size: 12px; white-space: nowrap; }
 .choice-item .desc { width: 100%; color: var(--muted-2); font-size: 12px; }
+
+/* ---------- 复选框：统一尺寸与主题色（chip/表单等独立场景） ---------- */
+.checkbox {
+  accent-color: var(--accent-strong);
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+/* choice 列表内的原生控件（checkbox/radio）由容器规则统一 */
+.choice-item input { accent-color: var(--accent-strong); width: 15px; height: 15px; flex: 0 0 auto; }
 
 /* ---------- 网格选择卡片（清理项） ---------- */
 .chip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
@@ -355,7 +375,7 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 }
 .chip:hover { border-color: var(--border-strong); }
 .chip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.chip input { position: absolute; left: 12px; top: 12px; accent-color: var(--accent-strong); }
+.chip input { position: absolute; left: 12px; top: 12px; }
 .chip .t { font-weight: 550; display: flex; align-items: center; gap: 6px; }
 .chip .d { color: var(--muted-2); font-size: 12px; min-height: 15px; }
 .risk-tag { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 4px; }
@@ -378,6 +398,7 @@ input[type="number"] { font-variant-numeric: tabular-nums; }
 .hint { color: var(--muted-2); font-size: 12px; }
 .dim { color: var(--muted); }
 .small { font-size: 12px; }
+.mt-4 { margin-top: var(--sp-4); }
 .msg { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-top: var(--sp-3); border: 1px solid; }
 .msg--ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-border); }
 .msg--err { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }

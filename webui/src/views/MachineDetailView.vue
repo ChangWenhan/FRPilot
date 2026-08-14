@@ -41,7 +41,7 @@
         <div ref="trendChart" class="chart"></div>
       </div>
 
-      <div class="card" style="margin-top: 16px">
+      <div class="card mt-4">
         <div class="card-head"><h3>磁盘</h3></div>
         <div class="table-wrap">
           <table class="table">

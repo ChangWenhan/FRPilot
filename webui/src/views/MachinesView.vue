@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top: 16px">
+    <div class="card mt-4">
       <div class="card-head">
         <h3>token 基线</h3>
         <code>{{ status?.tokenSet ? status?.tokenMask : '未设置' }}</code>
@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top: 16px">
+    <div class="card mt-4">
       <div class="table-wrap">
         <table class="table">
           <thead>
