@@ -5,7 +5,7 @@
       <span class="sub">每 15 秒自动刷新</span>
     </div>
 
-    <div v-if="isAdmin" class="card">
+    <div v-if="isAdmin" class="card qos-card">
       <div class="card-head"><h3>带宽控制</h3><span class="dim">frps 服务器 tc 整形，按机器限速，不改任何 frpc 配置、不踢会话</span></div>
       <div class="card-body">
         <div class="field" style="max-width: 360px">
@@ -300,6 +300,7 @@ function drawTrend(times, inData, outData) {
 .d-block { display: block; }
 .chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .chart-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
+.qos-card { margin-bottom: var(--sp-4); }
 .manual-grid { display: grid; grid-template-columns: 1fr 160px 160px; gap: 12px; align-items: end; }
 .manual-name { font-size: 13.5px; font-weight: 550; padding-bottom: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 900px) {
