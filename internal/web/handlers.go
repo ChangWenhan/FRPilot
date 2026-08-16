@@ -187,6 +187,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"sessionGraceMinutes": c.SessionGraceMinutes,
 		"health":              c.Health,
 		"cleanupCustom":       c.CleanupCustom,
+		"qos":                 c.Qos,
 		"ai": map[string]any{
 			"enabled":     c.AI.Enabled,
 			"providerUrl": c.AI.ProviderURL,
@@ -251,6 +252,7 @@ type saveSettingsReq struct {
 	} `json:"frps"`
 	Health        *config.HealthThresholds   `json:"health"`
 	CleanupCustom []config.CustomCleanupItem `json:"cleanupCustom"`
+	Qos           *config.QosConfig          `json:"qos"`
 	AI            *struct {
 		Enabled     *bool   `json:"enabled"`
 		ProviderURL *string `json:"providerUrl"`
@@ -323,6 +325,42 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			if req.AI.TimeoutSec != nil && *req.AI.TimeoutSec > 0 {
 				c.AI.TimeoutSec = *req.AI.TimeoutSec
 			}
+		}
+		if req.Qos != nil {
+			q := *req.Qos
+			if q.Mode != "off" && q.Mode != "auto" && q.Mode != "manual" {
+				q.Mode = "off"
+			}
+			if q.BudgetOutMbps < 0 {
+				q.BudgetOutMbps = 0
+			}
+			if q.BudgetInMbps < 0 {
+				q.BudgetInMbps = 0
+			}
+			if q.ActiveKBps <= 0 {
+				q.ActiveKBps = 1
+			}
+			if q.HysteresisSec < 15 {
+				q.HysteresisSec = 45
+			}
+			// 手动条目规范化：只保留名称非空、至少一个方向有额度的
+			manual := q.Manual[:0]
+			for _, it := range q.Manual {
+				if it.Name == "" {
+					continue
+				}
+				if it.OutMbps < 0 {
+					it.OutMbps = 0
+				}
+				if it.InMbps < 0 {
+					it.InMbps = 0
+				}
+				if it.OutMbps > 0 || it.InMbps > 0 {
+					manual = append(manual, it)
+				}
+			}
+			q.Manual = manual
+			c.Qos = q
 		}
 	})
 	if err != nil {

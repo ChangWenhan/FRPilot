@@ -40,7 +40,7 @@
               <thead>
                 <tr>
                   <th>机器</th><th class="num">累计入</th><th class="num">累计出</th>
-                  <th class="num">入速率</th><th class="num">出速率</th><th class="num">入占比</th><th>状态</th>
+                  <th class="num">入速率</th><th class="num">出速率</th><th class="num">入占比</th><th>状态</th><th class="num">出站额度</th>
                 </tr>
               </thead>
               <tbody>
@@ -55,6 +55,7 @@
                     <span v-if="f.anomaly" class="badge badge--danger">突增</span>
                     <span v-else class="badge badge--ok">正常</span>
                   </td>
+                  <td class="num"><span :class="quotaCls(f.proxy)">{{ quotaText(f.proxy) }}</span></td>
                 </tr>
               </tbody>
             </table>
@@ -81,6 +82,7 @@ import { get, fmtBytes } from '../api.js'
 import { cssVar, THEME_EVENT } from '../theme.js'
 
 const snap = ref(null)
+const qosStat = ref(null)
 const flowChart = ref(null)
 const trendChart = ref(null)
 let flowInst = null
@@ -109,11 +111,26 @@ function redraw() {
 
 async function load() {
   snap.value = await get('/api/traffic')
+  try { qosStat.value = await get('/api/qos/status') } catch {}
   await nextTick()
   if (snap.value?.flows?.length) {
     drawFlow()
     loadHistory()
   }
+}
+
+// 带宽控制出站额度展示（- 表示未启用；不限 = 该机器无固定额度）
+function quotaText(proxy) {
+  const q = qosStat.value
+  if (!q || q.mode === 'off') return '-'
+  const kbps = (q.quotaOutKbps || {})[proxy]
+  if (!kbps) return '不限'
+  return (kbps / 1000).toFixed(1) + 'M'
+}
+function quotaCls(proxy) {
+  const q = qosStat.value
+  if (!q || q.mode === 'off') return 'muted-cell'
+  return (q.active || []).includes(proxy) ? '' : 'muted-cell'
 }
 
 async function loadHistory() {

@@ -18,13 +18,14 @@ import (
 	"frpmon/internal/cli"
 	"frpmon/internal/collector"
 	"frpmon/internal/config"
+	"frpmon/internal/qos"
 	"frpmon/internal/registry"
 	"frpmon/internal/store"
 	"frpmon/internal/traffic"
 	"frpmon/internal/web"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	// 提供给 CLI 使用（frpm version / 部署脚本读取）
@@ -106,9 +107,12 @@ func runServer(args []string) error {
 	defer col.Stop()
 	traff := traffic.New(db, cfg)
 	traff.Start()
+	qosSvc := qos.New(cfg)
+	qosSvc.Start()
+	defer qosSvc.Stop()
 	tasks := actions.NewTaskManager(db, cfg)
 	aiSvc := ai.New(db, cfg)
-	srv := web.NewServer(db, authSvc, cfg, reg, col, traff, tasks, aiSvc)
+	srv := web.NewServer(db, authSvc, cfg, reg, col, traff, tasks, aiSvc, qosSvc)
 
 	addr := cfg.Get().ListenAddr
 	for i := 0; i < len(args)-1; i++ {

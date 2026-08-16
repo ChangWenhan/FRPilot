@@ -111,6 +111,25 @@ type CustomCleanupItem struct {
 	Risk    string `json:"risk"` // low | mid | high
 }
 
+// QosManualItem 手动限速模式的单台机器额度（Mbps，0=不限速）。
+type QosManualItem struct {
+	Name   string  `json:"name"`
+	OutMbps float64 `json:"outMbps"`
+	InMbps  float64 `json:"inMbps"`
+}
+
+// QosConfig 带宽均衡/限速（基于 frps 服务器 tc 整形，以 frps 视角：
+// 出站=服务器向外发数据，入站=服务器接收数据；预算为 0 或留空的方向不整形）。
+type QosConfig struct {
+	Mode          string          `json:"mode"` // off | auto | manual
+	BudgetOutMbps float64         `json:"budgetOutMbps"`
+	BudgetInMbps  float64         `json:"budgetInMbps"`
+	ActiveKBps    float64         `json:"activeKBps"`   // 自动模式活跃判定阈值
+	HysteresisSec int             `json:"hysteresisSec"` // 自动模式滞后窗口
+	Interface     string          `json:"interface"`     // 空=自动检测默认路由接口
+	Manual        []QosManualItem `json:"manual"`
+}
+
 // HealthThresholds 一键体检阈值（可配置）。
 type HealthThresholds struct {
 	CPUWarn        float64 `json:"cpuWarn"`
@@ -143,6 +162,7 @@ type AppConfig struct {
 	LoginWindowMin      int                 `json:"loginWindowMinutes"`
 	Health              HealthThresholds    `json:"health"`
 	CleanupCustom       []CustomCleanupItem `json:"cleanupCustom"`
+	Qos                 QosConfig           `json:"qos"`
 	AI                  AiConfig            `json:"ai"`
 	TLS                 TlsConfig           `json:"tls"`
 	Version             string              `json:"-"`
@@ -167,6 +187,12 @@ func DefaultConfig(dataDir string) *AppConfig {
 			GPUTempWarn: 75, GPUTempFail: 85,
 			GPUMemWarn: 85, GPUMemFail: 95,
 			ClamDbMaxDays: 7, SnapshotMaxAge: 10,
+		},
+		Qos: QosConfig{
+			Mode:          "off",
+			BudgetOutMbps: 3,
+			ActiveKBps:    1,
+			HysteresisSec: 45,
 		},
 		AI: AiConfig{
 			Enabled: false, ProviderURL: "", Model: "",
@@ -314,6 +340,22 @@ func applyDefaults(cfg, defaults *AppConfig) {
 	}
 	if cfg.LoginWindowMin <= 0 {
 		cfg.LoginWindowMin = defaults.LoginWindowMin
+	}
+	if cfg.Qos.Mode == "" {
+		cfg.Qos.Mode = defaults.Qos.Mode
+	}
+	if cfg.Qos.Mode != "off" && cfg.Qos.Mode != "auto" && cfg.Qos.Mode != "manual" {
+		cfg.Qos.Mode = defaults.Qos.Mode
+	}
+	if cfg.Qos.BudgetOutMbps < 0 || cfg.Qos.BudgetInMbps < 0 {
+		cfg.Qos.BudgetOutMbps = defaults.Qos.BudgetOutMbps
+		cfg.Qos.BudgetInMbps = 0
+	}
+	if cfg.Qos.ActiveKBps <= 0 {
+		cfg.Qos.ActiveKBps = defaults.Qos.ActiveKBps
+	}
+	if cfg.Qos.HysteresisSec < 15 {
+		cfg.Qos.HysteresisSec = defaults.Qos.HysteresisSec
 	}
 	if cfg.Frps.SSHPort <= 0 {
 		cfg.Frps.SSHPort = defaults.Frps.SSHPort

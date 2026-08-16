@@ -23,6 +23,9 @@ PrivateDevices=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
+# 带宽均衡（QoS）需要执行 tc/ip 命令创建流量整形规则
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
 
 # 仅允许写入数据目录与配置目录（其余系统文件只读）
 ReadWritePaths=/var/lib/frpilot /etc/frpilot

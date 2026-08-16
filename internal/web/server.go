@@ -13,6 +13,7 @@ import (
 	"frpmon/internal/auth"
 	"frpmon/internal/collector"
 	"frpmon/internal/config"
+	"frpmon/internal/qos"
 	"frpmon/internal/registry"
 	"frpmon/internal/store"
 	"frpmon/internal/traffic"
@@ -30,12 +31,13 @@ type Server struct {
 	traffic   *traffic.Service
 	tasks     *actions.TaskManager
 	ai        *ai.Service
+	qos       *qos.Service
 	mux       *http.ServeMux
 	static    http.Handler
 }
 
-func NewServer(db *store.DB, authSvc *auth.Service, cfg *config.Manager, reg *registry.Service, col *collector.Collector, traff *traffic.Service, tasks *actions.TaskManager, aiSvc *ai.Service) *Server {
-	s := &Server{db: db, auth: authSvc, cfg: cfg, registry: reg, collector: col, traffic: traff, tasks: tasks, ai: aiSvc}
+func NewServer(db *store.DB, authSvc *auth.Service, cfg *config.Manager, reg *registry.Service, col *collector.Collector, traff *traffic.Service, tasks *actions.TaskManager, aiSvc *ai.Service, qosSvc *qos.Service) *Server {
+	s := &Server{db: db, auth: authSvc, cfg: cfg, registry: reg, collector: col, traffic: traff, tasks: tasks, ai: aiSvc, qos: qosSvc}
 	s.routes()
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -80,6 +82,7 @@ func (s *Server) routes() {
 
 	mux.HandleFunc("GET /api/traffic", s.requireAuth(s.handleTraffic))
 	mux.HandleFunc("GET /api/traffic/history", s.requireAuth(s.handleTrafficHistory))
+	mux.HandleFunc("GET /api/qos/status", s.requireAuth(s.handleQosStatus))
 
 	mux.HandleFunc("GET /api/actions/cleanup-items", s.requireAuth(s.handleCleanupItems))
 	mux.HandleFunc("POST /api/actions/cleanup/preview", s.requireAdmin(s.handleCleanupPreview))

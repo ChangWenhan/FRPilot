@@ -15,6 +15,7 @@ import (
 
 	"frpmon/internal/auth"
 	"frpmon/internal/config"
+	"frpmon/internal/qos"
 	"frpmon/internal/registry"
 	"frpmon/internal/store"
 )
@@ -37,7 +38,8 @@ func newTestServer(t *testing.T) (*httptest.Server, *http.Client, *store.DB) {
 	traff := traffic.New(db, cfg)
 	tasks := actions.NewTaskManager(db, cfg)
 	aiSvc := ai.New(db, cfg)
-	srv := NewServer(db, authSvc, cfg, reg, col, traff, tasks, aiSvc)
+	qosSvc := qos.New(cfg)
+	srv := NewServer(db, authSvc, cfg, reg, col, traff, tasks, aiSvc, qosSvc)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return ts, ts.Client(), db
