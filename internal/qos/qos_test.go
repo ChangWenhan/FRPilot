@@ -199,7 +199,7 @@ func TestApplyDirectionCreatesClasses(t *testing.T) {
 	s.applyDirection("eth0", "out", 3e6, des)
 	s.mu.Unlock()
 
-	if !f.contains("tc", "qdisc", "replace", "dev", "eth0", "root") {
+	if !f.contains("tc", "qdisc", "add", "dev", "eth0", "root") {
 		t.Fatal("应创建出口 root qdisc")
 	}
 	if !f.contains("tc", "class", "replace", "dev", "eth0", "classid", "1:2", "htb", "rate", "1500kbit") {
@@ -267,7 +267,7 @@ func TestApplyDirectionIngressUsesIFB(t *testing.T) {
 	if !f.contains("tc", "filter", "add", "dev", "eth0", "parent", "ffff:", "action", "mirred", "egress", "redirect", "dev", IFBDev) {
 		t.Fatal("eth0 应挂 ingress 重定向到 ifb0")
 	}
-	if !f.contains("tc", "qdisc", "replace", "dev", IFBDev, "root") {
+	if !f.contains("tc", "qdisc", "add", "dev", IFBDev, "root") {
 		t.Fatal("ifb0 上应有 root qdisc")
 	}
 	if !f.contains("tc", "filter", "add", "dev", IFBDev, "match", "ip", "dport", "6001", "0xffff") {
@@ -323,7 +323,14 @@ func TestDetectDefaultIface(t *testing.T) {
 }
 
 func TestIsBenignError(t *testing.T) {
-	benign := []string{"RTNETLINK answers: File exists", "RTNETLINK answers: No such file or directory", "Cannot find device \"ifb0\"", "No such device"}
+	benign := []string{
+		"RTNETLINK answers: File exists",
+		"RTNETLINK answers: No such file or directory",
+		"Cannot find device \"ifb0\"",
+		"No such device",
+		"Error: Cannot delete qdisc with handle of zero.",
+		"Error: Parent Qdisc doesn't exists.",
+	}
 	for _, m := range benign {
 		if !isBenignError(&runErr{m}) {
 			t.Errorf("应视为良性错误: %s", m)

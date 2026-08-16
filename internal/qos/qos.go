@@ -442,11 +442,14 @@ func (s *Service) buildBaseCommands(dev, dir string, rootRate float64) [][]strin
 			[]string{"tc", "qdisc", "add", "dev", dev, "handle", "ffff:", "ingress"}, // 已存在会失败，可忽略
 			[]string{"tc", "filter", "del", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1", "u32"},
 			[]string{"tc", "filter", "add", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", IFBDev},
-			[]string{"tc", "qdisc", "replace", "dev", IFBDev, "root", "handle", "1:", "htb", "default", "1"},
+			// 注意：必须用 add 而非 replace——系统默认 fq_codel 的 handle 为 0，
+			// replace 会尝试删除它并报 "Cannot delete qdisc with handle of zero"；
+			// add 能直接替换默认 qdisc，且已存在时只报 File exists（良性）。
+			[]string{"tc", "qdisc", "add", "dev", IFBDev, "root", "handle", "1:", "htb", "default", "1"},
 		)
 		dev = IFBDev
 	} else {
-		cmds = append(cmds, []string{"tc", "qdisc", "replace", "dev", dev, "root", "handle", "1:", "htb", "default", "1"})
+		cmds = append(cmds, []string{"tc", "qdisc", "add", "dev", dev, "root", "handle", "1:", "htb", "default", "1"})
 	}
 	cmds = append(cmds, []string{"tc", "class", "replace", "dev", dev, "parent", "1:", "classid", "1:1", "htb", "rate", rateStr(rootRate)})
 	return cmds
@@ -512,13 +515,16 @@ func rateStr(bps float64) string {
 	return fmt.Sprintf("%.0fkbit", k)
 }
 
-// isBenignError 判断可忽略的命令错误（设备/规则已存在、要删的规则不存在）。
+// isBenignError 判断可忽略的命令错误（设备/规则已存在、要删的规则不存在、
+// 默认 qdisc 保护性拒绝等）。
 func isBenignError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "File exists") ||
 		strings.Contains(msg, "No such file or directory") ||
 		strings.Contains(msg, "No such device") ||
-		strings.Contains(msg, "Cannot find")
+		strings.Contains(msg, "Cannot find") ||
+		strings.Contains(msg, "Cannot delete qdisc with handle of zero") ||
+		strings.Contains(msg, "Parent Qdisc doesn't exists")
 }
 
 // detectDefaultIface 通过默认路由检测整形接口。
