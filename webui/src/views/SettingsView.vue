@@ -147,61 +147,6 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-head"><h3>带宽控制</h3><span class="dim">基于 frps 服务器 tc 整形，按机器（隧道端口）限速，不影响任何 frpc 配置</span></div>
-        <div class="card-body">
-          <div class="field" style="max-width: 360px">
-            <label>模式</label>
-            <select class="select" v-model="form.qos.mode">
-              <option value="off">关闭（不限制）</option>
-              <option value="auto">自动均衡（按活跃机器数平均分）</option>
-              <option value="manual">手动限速（每台固定额度）</option>
-            </select>
-          </div>
-
-          <template v-if="form.qos.mode === 'auto'">
-            <div class="field-grid" style="margin-top: 14px">
-              <div class="field">
-                <label>出站预算 Mbps（frps 对外发送数据，填了才生效）</label>
-                <input class="input" type="number" min="0" step="0.1" v-model.number="form.qos.budgetOutMbps" />
-              </div>
-              <div class="field">
-                <label>入站预算 Mbps（留空=该方向不限制）</label>
-                <input class="input" type="number" min="0" step="0.1" v-model.number="form.qos.budgetInMbps" />
-              </div>
-              <div class="field">
-                <label>活跃判定阈值 KB/s</label>
-                <input class="input" type="number" min="1" v-model.number="form.qos.activeKBps" />
-              </div>
-              <div class="field">
-                <label>滞后窗口（秒）</label>
-                <input class="input" type="number" min="15" v-model.number="form.qos.hysteresisSec" />
-              </div>
-              <div class="field">
-                <label>整形接口（留空=自动检测）</label>
-                <input class="input" v-model="form.qos.interface" placeholder="如 eth0" />
-              </div>
-            </div>
-            <p class="hint" style="margin-top: 10px">自动模式：速率超过阈值的机器视为「正在被操作」（不管开几个连接都算一台），出站预算 ÷ 活跃机器数平均分配并严格封顶；全部空闲时自动不限速。典型：出站填 3（服务器实际带宽），入站留空。</p>
-          </template>
-
-          <template v-if="form.qos.mode === 'manual'">
-            <div class="manual-grid" style="margin-top: 14px">
-              <template v-for="m in machines" :key="m.name">
-                <span class="manual-name" :title="m.name">{{ m.name }}</span>
-                <div class="field"><label>出站 Mbps</label>
-                  <input class="input" type="number" min="0" step="0.1" v-model.number="manualMap[m.name].out" placeholder="留空不限" />
-                </div>
-                <div class="field"><label>入站 Mbps</label>
-                  <input class="input" type="number" min="0" step="0.1" v-model.number="manualMap[m.name].in" placeholder="留空不限" />
-                </div>
-              </template>
-            </div>
-            <p class="hint" style="margin-top: 10px">手动模式：填写的机器按固定额度限速，留空的机器不限速。</p>
-          </template>
-        </div>
-      </div>
-
       <div class="action-bar">
         <button class="btn" @click="save">保存设置</button>
         <button class="btn btn--ghost" @click="detectFrps">一键自动检测 frps 配置</button>
@@ -223,21 +168,12 @@ const msg = ref('')
 const msgOk = ref(true)
 const manualTokenMode = ref(false)
 const manualToken = ref('')
-const machines = ref([])
-const manualMap = reactive({})
-const form = reactive({ frps: {}, registration: 'open', health: {}, cleanupCustom: [], ai: {}, qos: {} })
+const form = reactive({ frps: {}, registration: 'open', health: {}, cleanupCustom: [], ai: {} })
 const aiKeyMask = ref('')
 
 onMounted(async () => {
   const s = await get('/api/settings')
   applySettings(s)
-  try {
-    const r = await get('/api/machines')
-    machines.value = (r.machines || []).map(m => ({ name: m.name, id: m.id }))
-    machines.value.forEach(m => {
-      if (!manualMap[m.name]) manualMap[m.name] = { out: 0, in: 0 }
-    })
-  } catch {}
 })
 
 function applySettings(s) {
@@ -254,20 +190,6 @@ function applySettings(s) {
     apiKey: '',
   })
   aiKeyMask.value = s.ai?.apiKeyMask || ''
-  Object.assign(form.qos, {
-    mode: s.qos?.mode || 'off',
-    budgetOutMbps: s.qos?.budgetOutMbps || 0,
-    budgetInMbps: s.qos?.budgetInMbps || 0,
-    activeKBps: s.qos?.activeKBps || 1,
-    hysteresisSec: s.qos?.hysteresisSec || 45,
-    interface: s.qos?.interface || '',
-  })
-  const manual = s.qos?.manual || []
-  for (const it of manual) {
-    if (!manualMap[it.name]) manualMap[it.name] = { out: 0, in: 0 }
-    manualMap[it.name].out = it.outMbps || 0
-    manualMap[it.name].in = it.inMbps || 0
-  }
   Object.assign(form.frps, {
     dashboardUrl: s.frps.dashboardUrl || '',
     dashboardUser: s.frps.dashboardUser || '',
@@ -295,16 +217,12 @@ async function save() {
     }
     const aiPayload = { ...form.ai }
     if (!String(aiPayload.apiKey || '').trim()) delete aiPayload.apiKey
-    const qosManual = Object.entries(manualMap)
-      .filter(([name, v]) => name && (v.out > 0 || v.in > 0))
-      .map(([name, v]) => ({ name, outMbps: v.out || 0, inMbps: v.in || 0 }))
     await post('/api/settings', {
       registration: form.registration,
       frps: frpsPayload,
       health: form.health,
       cleanupCustom: custom,
       ai: aiPayload,
-      qos: { ...form.qos, manual: qosManual },
     })
     show('设置已保存（热修改生效，无需重启）')
   } catch (e) { show(e.message, false) }
@@ -361,13 +279,9 @@ async function reload() {
 .unset { color: var(--danger); }
 .custom-row { display: grid; grid-template-columns: 1.2fr 1.5fr 2.5fr 110px 76px; gap: 12px; align-items: end; margin-bottom: var(--sp-3); }
 .custom-del .btn { width: 100%; }
-.manual-grid { display: grid; grid-template-columns: 1fr 160px 160px; gap: 12px; align-items: end; }
-.manual-name { font-size: 13.5px; font-weight: 550; padding-bottom: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 900px) {
   .custom-row { grid-template-columns: 1fr 1fr; }
   .custom-row .field:nth-child(3) { grid-column: 1 / -1; }
-  .manual-grid { grid-template-columns: 1fr 1fr; }
-  .manual-name { grid-column: 1 / -1; padding-bottom: 0; }
 }
 @media (max-width: 560px) { .custom-row { grid-template-columns: 1fr; } }
 </style>
