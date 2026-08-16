@@ -102,6 +102,31 @@ func TestUpdateActiveOfflineCleared(t *testing.T) {
 	}
 }
 
+func TestUpdateActiveBackfillsSamples(t *testing.T) {
+	s, _ := newTestService()
+	thr := 1.0 * 1024
+	samples := []MachineSample{
+		{Name: "a", Port: 6001, Online: true, RateIn: 5000},
+		{Name: "b", Port: 6002, Online: true, RateIn: 100},
+	}
+	s.updateActive(samples, thr, 45*time.Second)
+	if !samples[0].Active {
+		t.Fatal("高流量机器应被回填为活跃")
+	}
+	if samples[1].Active {
+		t.Fatal("低流量机器不应被回填为活跃")
+	}
+	// 集成验证：desired 应能识别活跃机器
+	cfg := config.QosConfig{Mode: "auto", BudgetOutMbps: 3}
+	des, _, en := s.desired(samples, true, cfg)
+	if !en || len(des) != 1 {
+		t.Fatalf("desired 应识别 1 台活跃机器，得到 %d 台", len(des))
+	}
+	if _, ok := des["a"]; !ok {
+		t.Fatal("desired 应包含活跃机器 a")
+	}
+}
+
 // ---- 配额计算 ----
 
 func TestDesiredAutoFairShare(t *testing.T) {

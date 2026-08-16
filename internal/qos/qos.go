@@ -323,10 +323,12 @@ func (s *Service) sample() ([]MachineSample, error) {
 }
 
 // updateActive 活跃判定：速率超过阈值即活跃；低于阈值后在滞后窗口内保持活跃。
+// 判定结果回写到 samples[i].Active（供 desired 使用）。
 func (s *Service) updateActive(samples []MachineSample, threshold float64, hysteresis time.Duration) {
 	now := time.Now()
 	online := map[string]bool{}
-	for _, m := range samples {
+	for i := range samples {
+		m := &samples[i]
 		online[m.Name] = m.Online
 		if !m.Online {
 			continue
@@ -350,6 +352,10 @@ func (s *Service) updateActive(samples []MachineSample, threshold float64, hyste
 		if !online[name] {
 			delete(s.lastActive, name)
 		}
+	}
+	// 回填采样结果的活跃标记
+	for i := range samples {
+		samples[i].Active = s.active[samples[i].Name]
 	}
 }
 
