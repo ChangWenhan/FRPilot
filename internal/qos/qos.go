@@ -442,14 +442,17 @@ func (s *Service) buildBaseCommands(dev, dir string, rootRate float64) [][]strin
 			[]string{"tc", "qdisc", "add", "dev", dev, "handle", "ffff:", "ingress"}, // 已存在会失败，可忽略
 			[]string{"tc", "filter", "del", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1", "u32"},
 			[]string{"tc", "filter", "add", "dev", dev, "parent", "ffff:", "protocol", "ip", "prio", "1", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", IFBDev},
-			// 注意：必须用 add 而非 replace——系统默认 fq_codel 的 handle 为 0，
-			// replace 会尝试删除它并报 "Cannot delete qdisc with handle of zero"；
-			// add 能直接替换默认 qdisc，且已存在时只报 File exists（良性）。
+			// 必须 del 再 add：系统默认 qdisc（handle 0）上直接 add 会静默不生效；
+			// del 对不存在/默认 qdisc 的报错均为良性。
+			[]string{"tc", "qdisc", "del", "dev", IFBDev, "root"},
 			[]string{"tc", "qdisc", "add", "dev", IFBDev, "root", "handle", "1:", "htb", "default", "1"},
 		)
 		dev = IFBDev
 	} else {
-		cmds = append(cmds, []string{"tc", "qdisc", "add", "dev", dev, "root", "handle", "1:", "htb", "default", "1"})
+		cmds = append(cmds,
+			[]string{"tc", "qdisc", "del", "dev", dev, "root"},
+			[]string{"tc", "qdisc", "add", "dev", dev, "root", "handle", "1:", "htb", "default", "1"},
+		)
 	}
 	cmds = append(cmds, []string{"tc", "class", "replace", "dev", dev, "parent", "1:", "classid", "1:1", "htb", "rate", rateStr(rootRate)})
 	return cmds

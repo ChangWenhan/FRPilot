@@ -199,7 +199,7 @@ func TestApplyDirectionCreatesClasses(t *testing.T) {
 	s.applyDirection("eth0", "out", 3e6, des)
 	s.mu.Unlock()
 
-	if !f.contains("tc", "qdisc", "add", "dev", "eth0", "root") {
+	if !f.contains("tc", "qdisc", "del", "dev", "eth0", "root") {
 		t.Fatal("应创建出口 root qdisc")
 	}
 	if !f.contains("tc", "class", "replace", "dev", "eth0", "classid", "1:2", "htb", "rate", "1500kbit") {
