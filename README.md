@@ -16,13 +16,13 @@
 - **Security posture** — ClamAV (incl. signature freshness) / CrowdSec (decision count) / fail2ban (banned count) / rkhunter / UFW checked per machine
 - **Scheduled tasks** — user crontabs, `/etc/crontab`, `/etc/cron.d/*`, cron.hourly/daily/weekly/monthly scripts and systemd timers in one view
 - **Traffic & bandwidth direction** — cumulative traffic, live rates and share percentages per frpc; highlights which machine is consuming the bandwidth and flags rate spikes as anomalies
-- **Bandwidth control (QoS)** — per-machine bandwidth balancing directly on the frps server via `tc` shaping (no frpc config changes, no session drops): **auto mode** fairly divides the egress/ingress budget among actively-used machines (a machine counts as one no matter how many SSH sessions, threshold + hysteresis to avoid flapping), **manual mode** sets fixed caps per machine; directions with no budget are left untouched; rules are cleaned up automatically on shutdown
+- **Bandwidth control (QoS)** — per-machine bandwidth balancing directly on the frps server via `tc` shaping (no frpc config changes, no session drops): **auto mode** fairly divides the egress/ingress budget among actively-used machines (a machine counts as one no matter how many SSH sessions, threshold + hysteresis to avoid flapping), **manual mode** sets fixed caps per machine; directions with no budget are left untouched; rules are cleaned up automatically on shutdown; configured on the Traffic page (admin only) — the CLI does not cover QoS
 - **One-click cleanup** — 5 built-in safe command sets (page cache / APT cache / journal vacuum / user caches / temp files) with risk levels, dry-run preview, custom command extension and human confirmation before execution; root-required items auto-elevate when a sudo password is configured
 - **Security suite (health check + virus scan, one entry)** — threshold-based health assessment over the latest snapshot (CPU/memory/disk/GPU temp & VRAM/security/tunnel reachability) with scored reports (fail −10, warn −3; ≥90 pass, ≥70 warn, else fail) and stored history; virus scan runs the tools installed on each machine: ClamAV quick (common dirs) / full (/) / **signature update (freshclam)** plus rkhunter/chkrootkit rootkit checks; asynchronous background tasks with real-time per-directory progress
 - **AI diagnosis** (OpenAI-compatible API) — explains every warn/fail item and suggests remediation steps in plain text; **diagnosis only, never executes** — the system prompt forbids commands and server-side heuristics flag any command-like content as "for reference only"
 - **User system** — mandatory login; the first registered user becomes admin; configurable registration (open / approval / closed); two roles (admin / user); bcrypt hashing, account+IP brute-force lockout and a full audit trail
 - **Live task progress** — cleanup/scan tasks show an animated progress bar and the current phase (e.g. "scanning /home (2/7)") in the task records view
-- **Responsive web UI** — shadcn-inspired design system (unified control heights, strict alignment, ellipsis truncation, dropdown action menus); desktop and mobile friendly; installable as a home-screen app
+- **Responsive web UI** — shadcn-inspired design system (unified control heights, strict alignment, ellipsis truncation, dropdown action menus, one-click dark/light theme toggle); desktop and mobile friendly; installable as a home-screen app
 - **CLI** — `frpm` shares the same API, permissions and audit logging as the web UI
 
 ## Architecture
@@ -84,7 +84,7 @@ System metrics start within 30 seconds; security software, cron and port data ar
 | Page | Purpose |
 |------|---------|
 | Machines | machine stats (total / monitoring / pending / frps clients / traffic), token baseline, machine list (SSH credentials + sudo password (⋮ menu), monitoring toggle, last seen), 24h trend charts, disk / security / cron / ports detail |
-| Traffic | bandwidth direction chart, live rates, 24h history, anomaly flags |
+| Traffic | bandwidth control (auto-balance / manual caps, admin only), bandwidth direction chart, live rates, 24h history, anomaly flags |
 | Actions | one-click cleanup (preview → confirm → execute), security suite (health report + history / virus scan: ClamAV, rootkit, signature update — live progress), AI diagnosis, task records with progress bars |
 | Settings | frps connection, token baseline, registration mode, health thresholds, custom cleanup commands, AI provider |
 
@@ -126,6 +126,10 @@ Config file: `/etc/frpilot/config.json` (generated at install; editable from the
 | `health.*` | health thresholds (CPU/memory/disk/GPU temp & VRAM/clamav DB age) | see below |
 | `cleanupCustom` | custom cleanup commands (name/description/command/risk) | empty |
 | `ai.*` | AI provider (URL/model/timeout); API key stored encrypted | disabled |
+| `qos.*` | bandwidth control: mode `off`/`auto`/`manual`, egress/ingress budget Mbps, active threshold KB/s, hysteresis window (s), shaping interface, manual cap table | `off` / egress 3 Mbps / 1 KB/s / 45s |
+| `sessionGraceMinutes` | sliding window (minutes) for web login sessions; extended on every request | `5` |
+| `login*` | brute-force lockout (fails / lock minutes / IP fails / window) | 5 / 10 / 15 / 15 |
+| `tls.*` | enable HTTPS (cert & key paths; self-signed requires browser approval/import) | off |
 
 Default health thresholds: CPU warn/fail 70/85, memory 80/90, disk 75/85, GPU temperature 75/85 °C, GPU VRAM 85/95 %, ClamAV database 7 days, snapshot freshness 10 minutes.
 
@@ -142,7 +146,7 @@ Built-in cleanup items: `page_cache` (memory caches, low), `apt_cache` (APT arch
 ## Security Model
 
 - Mandatory login; bcrypt-hashed passwords; failed-login counters persisted in the database — 5 failures per account or 15 per source IP lock for 10 minutes (15-minute window), surviving restarts
-- Browser sessions use an **HttpOnly session cookie** (XSS-resistant); the bearer token is no longer stored in localStorage. The CLI opts in via the `X-FRPilot-Client: cli` header to receive a bearer token
+- Browser sessions use an **HttpOnly session cookie** (XSS-resistant); the bearer token is no longer stored in localStorage. Web sessions carry a **5-minute sliding window** (revisiting the page shortly after closing the tab needs no new login; the window is extended on every request). The CLI opts in via the `X-FRPilot-Client: cli` header to receive a fixed-lifetime bearer token
 - Sensitive configuration (frps dashboard/SSH passwords, token baseline, AI API key) is AES-GCM encrypted in SQLite; **config.json never holds plaintext credentials** (legacy values are migrated automatically on upgrade)
 - Machine SSH credentials and sudo passwords are AES-GCM encrypted at rest; the key file is separate from the database; APIs return masks only, never plaintext
 - Changing a password revokes all of that user's old sessions; security response headers enabled (nosniff / X-Frame-Options / Referrer-Policy, etc.)
@@ -180,13 +184,22 @@ bash /opt/frpilot/uninstall.sh --keep-data
 
 - SQLite in WAL mode; metrics/traffic/audit/health/AI-history unified 30-day retention cleanup
 - Measured under full load (collection loop + traffic polling + concurrent API): **~15 MB RSS, <1 % CPU**
+- Default `GOMEMLIMIT=512MB` soft cap with `GOGC=100` prevents idle memory bloat (overridable via env vars)
 - Collection cadence: fast metrics 30s, slow modules 5min, traffic polling 30s
+
+## Version History
+
+- **v0.3.0** — Bandwidth control (QoS): `tc` shaping on the frps server, auto-balance / manual caps
+- **v0.2.0** — Unified UI component styles; manual dark/light theme toggle; 5-minute sliding web sessions; machine overview merged into the Machines page
+- **v0.1.0** — First release: auto discovery, SSH collection, security suite, one-click cleanup, AI diagnosis, users & audit
+
+> Hot updates keep the version number unchanged: just replace the binary to apply fixes — see Operations.
 
 ## Development
 
 ```bash
 # Backend
-go build -o frpilot .          # requires Go 1.22+
+go build -o frpilot .          # requires Go 1.26+
 go test ./...
 
 # Frontend (build output is embedded into the binary)
