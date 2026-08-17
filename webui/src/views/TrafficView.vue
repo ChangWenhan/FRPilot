@@ -269,7 +269,7 @@ function drawFlow() {
       return `${f.proxy}<br/>入 ${fmtBytes(f.rateIn)}/s<br/>出 ${fmtBytes(f.rateOut)}/s<br/>累计入 ${fmtBytes(f.inBytes)} (${f.pctIn}%)`
     } },
     grid: { left: 120, right: 30, top: 10, bottom: 25 },
-    xAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2') } },
+    xAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2'), formatter: v => fmtBytes(v) + '/s' } },
     yAxis: { type: 'category', data: sorted.map(f => f.proxy), axisLabel: { color: cssVar('--muted'), overflow: 'truncate', width: 100 } },
     series: [
       { name: '入', type: 'bar', stack: 't', data: sorted.map(f => f.rateIn), itemStyle: { color: cssVar('--accent') } },
@@ -286,7 +286,7 @@ function drawTrend(times, inData, outData) {
     legend: { data: ['入速率', '出速率'], textStyle: { color: cssVar('--muted') } },
     grid: { left: 60, right: 20, top: 30, bottom: 40 },
     xAxis: { type: 'category', data: times, axisLabel: { color: cssVar('--muted-2') } },
-    yAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2') } },
+    yAxis: { type: 'value', axisLabel: { color: cssVar('--muted-2'), formatter: v => fmtBytes(v) + '/s' } },
     series: [
       { name: '入速率', type: 'line', data: inData, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--accent') } },
       { name: '出速率', type: 'line', data: outData, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--ok') } },

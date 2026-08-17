@@ -176,7 +176,7 @@ async function loadMetrics() {
     legend: { data: ['CPU', '内存', '磁盘', 'GPU'], textStyle: { color: cssVar('--muted') } },
     grid: { left: 50, right: 20, top: 30, bottom: 40 },
     xAxis: { type: 'category', data: times, axisLabel: { color: cssVar('--muted-2'), fontSize: 10 } },
-    yAxis: { type: 'value', max: 100, axisLabel: { color: cssVar('--muted-2') } },
+    yAxis: { type: 'value', max: 100, axisLabel: { color: cssVar('--muted-2'), formatter: '{value}%' } },
     series: [
       { name: 'CPU', type: 'line', data: cpu, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--accent') } },
       { name: '内存', type: 'line', data: mem, smooth: true, showSymbol: false, itemStyle: { color: cssVar('--ok') } },
